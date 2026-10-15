@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
-import { LoaderCircle } from 'lucide-react';
 import { Profile } from '../security/ipc-contracts';
 import { CloudSyncPanel } from './components/CloudSyncPanel';
 import { ProfileSwitcher } from './components/ProfileSwitcher';
+import { ProfileCheckingAnimation } from './components/ProfileCheckingAnimation';
 import appLogo from './icon.svg';
 import './styles/index.css';
 
@@ -25,7 +25,7 @@ const App: React.FC = () => {
 
   const handleAuthStateChanged = useCallback((state: typeof authState) => {
     setAuthState(state);
-    if (state === 'signedOut' || state === 'error') {
+    if (state === 'signedOut') {
       setProfiles([]);
       setProfilesLoaded(false);
     }
@@ -56,29 +56,22 @@ const App: React.FC = () => {
                 onRefreshProfiles={refreshProfiles}
               />
             ) : (
-              <div role="status" style={{ height: '100%', display: 'grid', placeItems: 'center', color: '#9ba1b0' }}>
-                Loading your profiles…
-              </div>
+              <ProfileCheckingAnimation
+                title="Loading your profiles…"
+                subtitle="Initializing local partitions & saved session storage…"
+              />
             )}
           </main>
         </>
       ) : authState === 'checking' || authState === 'syncing' ? (
-        <main
-          role="status"
-          style={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 16,
-            color: '#9ba1b0',
-          }}
-        >
-          <img src={appLogo} alt="Multi Agent" width={56} height={56} />
-          <LoaderCircle size={22} className="spin" aria-hidden="true" />
-          <span>{authState === 'syncing' ? 'Loading your profiles…' : 'Checking your account…'}</span>
-        </main>
+        <ProfileCheckingAnimation
+          title={authState === 'syncing' ? 'Syncing your profiles…' : 'Checking your profile…'}
+          subtitle={
+            authState === 'syncing'
+              ? 'Synchronizing cloud browser profiles & cookies…'
+              : 'Verifying cloud credentials, anti-detect fingerprints & network security'
+          }
+        />
       ) : null}
 
       <CloudSyncPanel

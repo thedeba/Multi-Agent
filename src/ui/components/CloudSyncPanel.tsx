@@ -1,5 +1,5 @@
 import React, { FormEvent, useEffect, useState } from 'react';
-import { User, onAuthStateChanged as subscribeAuthState, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { User, onIdTokenChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import {
   AlertTriangle,
   ArrowRight,
@@ -51,13 +51,13 @@ export const CloudSyncPanel: React.FC<CloudSyncPanelProps> = ({
 
     try {
       const { auth } = getFirebaseServices();
-      return subscribeAuthState(auth, async (account) => {
+      return onIdTokenChanged(auth, async (account) => {
         setAuthResolved(true);
         setUser(account);
         if (account) {
-          onAuthStateChanged('syncing');
           setBusy(true);
           setError('');
+          onAuthStateChanged('syncing');
           account.getIdToken()
             .then((idToken) => window.browserAPI.setAuthenticatedUser({
               idToken,
@@ -71,15 +71,16 @@ export const CloudSyncPanel: React.FC<CloudSyncPanelProps> = ({
             })
             .catch(async (syncError: unknown) => {
               const authErrorMessage = syncError instanceof Error ? syncError.message : String(syncError);
+              console.warn('Profile cloud sync failed, continuing locally:', authErrorMessage);
+              // Do NOT de-authenticate or clear authenticated user on sync failure!
+              // The user is authenticated; load local profiles and let them work.
               try {
-                await window.browserAPI.setAuthenticatedUser(null);
-              } catch (clearError) {
-                setError(`${authErrorMessage}; ${clearError instanceof Error ? clearError.message : String(clearError)}`);
-                onAuthStateChanged('error');
-                return;
+                await onProfilesUpdated();
+              } catch (profileErr) {
+                console.error('Failed to load local profiles:', profileErr);
               }
-              setError(authErrorMessage);
-              onAuthStateChanged('error');
+              setStatus('Offline mode (cloud sync pending)');
+              onAuthStateChanged('ready');
             })
             .finally(() => setBusy(false));
         } else {
@@ -191,22 +192,17 @@ export const CloudSyncPanel: React.FC<CloudSyncPanelProps> = ({
         idToken,
         apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
       });
-      onAuthStateChanged('syncing');
       await syncProfilesFromCloud(user);
       await onProfilesUpdated();
       onAuthStateChanged('ready');
       setStatus('Profiles synced');
     } catch (syncError) {
       const syncErrorMessage = syncError instanceof Error ? syncError.message : String(syncError);
-      try {
-        await window.browserAPI.setAuthenticatedUser(null);
-      } catch (clearError) {
-        setError(`${syncErrorMessage}; ${clearError instanceof Error ? clearError.message : String(clearError)}`);
-        onAuthStateChanged('error');
-        return;
-      }
       setError(syncErrorMessage);
-      onAuthStateChanged('error');
+      try {
+        await onProfilesUpdated();
+      } catch {}
+      onAuthStateChanged('ready');
     } finally {
       setBusy(false);
     }

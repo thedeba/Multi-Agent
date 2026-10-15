@@ -48,5 +48,41 @@ describe('FreeProxyService Multi-Country Support', () => {
     const countryCodes = new Set(proxies.map((p) => p.countryCode.toUpperCase()));
     expect(countryCodes.size).toBeGreaterThan(3);
   }, 20000);
+
+  it('provides comprehensive global country index from A to Z with flags and counts', () => {
+    const countries = FreeProxyService.getCountries();
+    expect(countries.length).toBeGreaterThanOrEqual(180);
+
+    const us = countries.find((c) => c.code === 'US');
+    expect(us).toBeDefined();
+    expect(us?.name).toBe('United States');
+    expect(us?.flag).toBe('🇺🇸');
+    expect(us?.count).toBeGreaterThanOrEqual(30);
+
+    const bd = countries.find((c) => c.code === 'BD');
+    expect(bd).toBeDefined();
+    expect(bd?.name).toBe('Bangladesh');
+    expect(bd?.flag).toBe('🇧🇩');
+    expect(bd?.count).toBeGreaterThanOrEqual(30);
+
+    const de = countries.find((c) => c.code === 'DE');
+    expect(de).toBeDefined();
+    expect(de?.name).toBe('Germany');
+    expect(de?.flag).toBe('🇩🇪');
+    expect(de?.count).toBeGreaterThanOrEqual(30);
+
+    const all = countries.find((c) => c.code === 'ALL');
+    expect(all).toBeDefined();
+    expect(all?.count).toBeGreaterThanOrEqual(2000);
+
+    // Verify popular countries have >= 30 proxies
+    const popular = FreeProxyService.getPopularCountries();
+    expect(popular.length).toBeGreaterThanOrEqual(10);
+    for (const p of popular) {
+      if (p.code !== 'ALL') {
+        expect(p.count, `Popular country ${p.code} (${p.name}) should have >= 30 proxies`).toBeGreaterThanOrEqual(30);
+      }
+    }
+  });
 });
 

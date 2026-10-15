@@ -1054,3 +1054,307 @@
     display: none;
   }
 }
+
+/* ==========================================================================
+   Profile Checking & Loading Animations
+   ========================================================================== */
+
+@keyframes profile-pulse-aura {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.45;
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: 0.75;
+  }
+}
+
+@keyframes profile-spin-clockwise {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes profile-spin-counter {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes profile-float-logo {
+  0%, 100% {
+    transform: translateY(0px) scale(1);
+  }
+  50% {
+    transform: translateY(-6px) scale(1.02);
+  }
+}
+
+@keyframes profile-shimmer-beam {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes profile-pulse-dot {
+  0%, 100% {
+    opacity: 0.45;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+.profile-checking-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 40%, #151824 0%, #0b0d13 100%);
+  overflow: hidden;
+  user-select: none;
+}
+
+.profile-checking-bg-glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(85px);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.profile-checking-bg-glow-1 {
+  width: 480px;
+  height: 480px;
+  top: calc(50% - 240px);
+  left: calc(50% - 240px);
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.22) 0%, transparent 70%);
+  animation: profile-pulse-aura 4.5s ease-in-out infinite alternate;
+}
+
+.profile-checking-bg-glow-2 {
+  width: 360px;
+  height: 360px;
+  top: calc(50% - 180px);
+  left: calc(50% - 180px);
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.16) 0%, transparent 70%);
+  animation: profile-pulse-aura 6s ease-in-out infinite alternate-reverse;
+}
+
+.profile-checking-card {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  width: min(520px, 92vw);
+  padding: 42px 36px;
+  background: rgba(18, 20, 29, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  box-shadow: 0 28px 75px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.profile-checking-hologram {
+  position: relative;
+  width: 140px;
+  height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 26px;
+}
+
+.profile-checking-radar-outer {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1.5px dashed rgba(59, 130, 246, 0.45);
+  animation: profile-spin-clockwise 14s linear infinite;
+}
+
+.profile-checking-radar-mid {
+  position: absolute;
+  inset: 12px;
+  border-radius: 50%;
+  border: 1.5px solid transparent;
+  border-top-color: #38bdf8;
+  border-right-color: #818cf8;
+  border-bottom-color: rgba(56, 189, 248, 0.15);
+  animation: profile-spin-counter 6s linear infinite;
+}
+
+.profile-checking-orbit-track {
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  animation: profile-spin-clockwise 3.5s linear infinite;
+  pointer-events: none;
+}
+
+.profile-checking-orbit-dot {
+  position: absolute;
+  top: -5px;
+  left: calc(50% - 5px);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #38bdf8;
+  box-shadow: 0 0 10px #38bdf8, 0 0 20px #3b82f6;
+}
+
+.profile-checking-logo-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  animation: profile-float-logo 3.5s ease-in-out infinite;
+}
+
+.profile-checking-core-glow {
+  position: absolute;
+  inset: -12px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.4) 0%, transparent 70%);
+  filter: blur(12px);
+  z-index: 0;
+}
+
+.profile-checking-logo {
+  width: 44px;
+  height: 44px;
+  position: relative;
+  z-index: 1;
+  filter: drop-shadow(0 0 12px rgba(59, 130, 246, 0.55));
+}
+
+.profile-checking-text-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.profile-checking-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  color: #60a5fa;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.profile-checking-badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #3b82f6;
+  box-shadow: 0 0 8px #3b82f6;
+  animation: profile-pulse-dot 1.8s ease-in-out infinite;
+}
+
+.profile-checking-title {
+  font-size: 21px;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, #ffffff 0%, #e2e8f0 60%, #93c5fd 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin: 0;
+}
+
+.profile-checking-subtitle {
+  font-size: 13px;
+  color: #94a3b8;
+  max-width: 390px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.profile-checking-bar-track {
+  width: 290px;
+  height: 5px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  position: relative;
+  margin-bottom: 24px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.profile-checking-bar-fill {
+  width: 100%;
+  height: 100%;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #3b82f6 0%, #06b6d4 35%, #10b981 70%, #8b5cf6 100%);
+  background-size: 200% 100%;
+  animation: profile-shimmer-beam 1.8s linear infinite;
+  box-shadow: 0 0 14px rgba(6, 182, 212, 0.65);
+}
+
+.profile-checking-checkpoints {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.profile-checking-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  font-size: 11.5px;
+  color: #cbd5e1;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.profile-checking-pill-icon.shield {
+  color: #34d399;
+}
+
+.profile-checking-pill-icon.globe {
+  color: #38bdf8;
+}
+
+.profile-checking-pill-icon.cpu {
+  color: #a78bfa;
+}
+

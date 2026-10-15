@@ -19,6 +19,8 @@ export const ProxyConfigSchema = z.object({
   username: z.string().optional(),
   password: z.string().optional(),
   changeIpUrl: z.string().optional(),
+  proxyType: z.enum(['manual', 'free', 'direct']).optional(),
+  freeProxyId: z.string().optional(),
 });
 export type ProxyConfig = z.infer<typeof ProxyConfigSchema>;
 

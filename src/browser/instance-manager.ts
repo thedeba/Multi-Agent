@@ -330,9 +330,14 @@ export class BrowserInstanceManager {
         '--restore-last-session',
         `--user-agent=${getEffectiveUserAgent(profile.browserType, profile.browserVersion, profile.os, profile.customUserAgent)}`,
         `--lang=${effectiveLanguage}`,
-        `--proxy-server=${proxyRules}`,
-        '--proxy-bypass-list=<local>',
       ];
+
+      if (profile.proxy?.enabled && profile.proxy.host && proxyRules !== 'direct://') {
+        args.push(`--proxy-server=${proxyRules}`);
+        args.push('--proxy-bypass-list=<local>');
+      } else {
+        args.push('--no-proxy-server');
+      }
 
       // WebRTC: Manual ON & OFF Controls
       if (isWebrtcDisabled) {

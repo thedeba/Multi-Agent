@@ -68,8 +68,8 @@ function registerIpcHandlers() {
       throw new Error('Only the application window can change the signed-in user.');
     }
     const transition = ++authTransition;
-    authenticatedUserId = null;
     if (credentials === null) {
+      authenticatedUserId = null;
       return;
     }
 

@@ -39,10 +39,20 @@ import {
   Activity,
   MoreVertical,
   ChevronDown,
+  LayoutGrid,
+  List,
+  Sparkles,
 } from 'lucide-react';
 import { Profile, ProxyConfig, SavedProxy } from '../../security/ipc-contracts';
 import { getBrowserUserAgent } from '../../profiles/browser-definitions';
-import { SUPPORTED_PROXY_COUNTRIES, ProxyCountry } from '../../network/proxy/proxy-countries';
+import { SUPPORTED_PROXY_COUNTRIES, POPULAR_PROXY_COUNTRIES, ProxyCountry } from '../../network/proxy/proxy-countries';
+import {
+  POPULAR_LANGUAGES,
+  ALL_LANGUAGES,
+  POPULAR_TIMEZONES,
+  ALL_TIMEZONES,
+  TIMEZONE_REGIONS,
+} from '../../profiles/locales';
 import { getFirebaseServices, isFirebaseConfigured } from '../services/firebase';
 import { restoreProfileCookiesFromCloud } from '../services/cloud-profile-sync';
 
@@ -208,12 +218,18 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
   const [freeProxies, setFreeProxies] = useState<any[]>([]);
   const [loadingFreeProxies, setLoadingFreeProxies] = useState(false);
   const [selectedFreeProxyId, setSelectedFreeProxyId] = useState<string>('');
+  const [freeProxyHost, setFreeProxyHost] = useState('');
+  const [freeProxyPort, setFreeProxyPort] = useState<number>(1080);
+  const [freeProxyMode, setFreeProxyMode] = useState<'http' | 'https' | 'socks5'>('socks5');
   const [proxyCountries, setProxyCountries] = useState<ProxyCountry[]>(SUPPORTED_PROXY_COUNTRIES);
+  const [popularProxyCountries, setPopularProxyCountries] = useState<ProxyCountry[]>(POPULAR_PROXY_COUNTRIES);
   const [selectedCountryCode, setSelectedCountryCode] = useState<string>('ALL');
   const [proxyFilterProtocol, setProxyFilterProtocol] = useState<'all' | 'socks5' | 'http'>('all');
   const [proxySearchText, setProxySearchText] = useState<string>('');
   const [quickProxyInput, setQuickProxyInput] = useState<string>('');
   const [proxySubTab, setProxySubTab] = useState<'manual' | 'free'>('manual');
+  const [freeProxyViewMode, setFreeProxyViewMode] = useState<'grid' | 'table'>('grid');
+  const [copiedProxyIp, setCopiedProxyIp] = useState<string | null>(null);
 
   // Proxy test and rotation state
   const [testingProxy, setTestingProxy] = useState(false);
@@ -222,6 +238,7 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
     success: boolean;
     latencyMs?: number;
     speedRating?: string;
+    uptime?: string;
     error?: string;
   }>>({});
   const [proxyTestResult, setProxyTestResult] = useState<{
@@ -234,6 +251,53 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
     error?: string;
   } | null>(null);
   const [rotatingProfileId, setRotatingProfileId] = useState<string | null>(null);
+
+  // Live Proxy Connection Test Toast state
+  const [proxyToast, setProxyToast] = useState<{
+    id: string;
+    type: 'testing' | 'success' | 'error';
+    title: string;
+    host: string;
+    port: number | string;
+    protocol?: string;
+    countryFlag?: string;
+    countryName?: string;
+    latencyMs?: number;
+    speedRating?: string;
+    exitIp?: string;
+    location?: string;
+    error?: string;
+  } | null>(null);
+
+  const toastTimeoutRef = React.useRef<any>(null);
+
+  const showProxyToast = (toastData: {
+    id: string;
+    type: 'testing' | 'success' | 'error';
+    title: string;
+    host: string;
+    port: number | string;
+    protocol?: string;
+    countryFlag?: string;
+    countryName?: string;
+    latencyMs?: number;
+    speedRating?: string;
+    exitIp?: string;
+    location?: string;
+    error?: string;
+  } | null) => {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+      toastTimeoutRef.current = null;
+    }
+    setProxyToast(toastData);
+    if (toastData && toastData.type !== 'testing') {
+      const delay = toastData.type === 'success' ? 4000 : 5000;
+      toastTimeoutRef.current = setTimeout(() => {
+        setProxyToast(null);
+      }, delay);
+    }
+  };
 
   // Import JSON drawer
   const [showImport, setShowImport] = useState(false);
@@ -261,6 +325,7 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
   // Auto Updater State
   const [updateStatus, setUpdateStatus] = useState<any>({ status: 'idle' });
   const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [activeActionMenuProfileId, setActiveActionMenuProfileId] = useState<string | null>(null);
   const [actionMenuPosition, setActionMenuPosition] = useState<{ top: number; right: number; openUpwards: boolean } | null>(null);
 
@@ -950,6 +1015,10 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
     setProxyTestResult(null);
     setQuickProxyInput('');
     setProxySubTab('manual');
+    setFreeProxyHost('');
+    setFreeProxyPort(1080);
+    setFreeProxyMode('socks5');
+    setSelectedFreeProxyId('');
     setRemoteDebuggingPort('');
     setTags([]);
     setProfileCookiesContent('');
@@ -960,7 +1029,11 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
     setIsCreateOpen(true);
   };
 
-  const handleOpenEdit = (p: Profile, tab: 'general' | 'proxy' | 'privacy' | 'cookies' = 'general') => {
+  const handleOpenEdit = (
+    p: Profile,
+    tab: 'general' | 'proxy' | 'privacy' | 'cookies' = 'general',
+    forcedProxySubTab?: 'manual' | 'free'
+  ) => {
     if (!isAuthenticated) return;
     setEditingProfileId(p.id);
     setEditorTab(tab);
@@ -980,25 +1053,53 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
     setIsTemporary(p.isTemporary);
     setRemoteDebuggingPort((p as any).remoteDebuggingPort || '');
     setProxyEnabled(p.proxy.enabled);
-    setProxyMode(p.proxy.mode);
-    setProxyHost(p.proxy.host);
-    setProxyPort(p.proxy.port);
-    setProxyUsername(p.proxy.username || '');
-    setProxyPassword(p.proxy.password || '');
-    setChangeIpUrl((p.proxy as any).changeIpUrl || '');
     setSelectedSavedProxyId('');
     setProxyTestResult(null);
-    if (p.proxy?.enabled && p.proxy?.host) {
-      const parts = [`${p.proxy.host}:${p.proxy.port}`];
-      if (p.proxy.username) {
-        parts.push(p.proxy.username);
-        if (p.proxy.password) parts.push(p.proxy.password);
-      }
-      setQuickProxyInput(parts.join(':'));
-    } else {
+
+    const isFree = forcedProxySubTab
+      ? forcedProxySubTab === 'free'
+      : ((p.proxy as any)?.proxyType === 'free' || Boolean((p.proxy as any)?.freeProxyId));
+
+    if (isFree) {
+      setProxySubTab('free');
+      setFreeProxyHost(p.proxy.host || '');
+      setFreeProxyPort(p.proxy.port || 1080);
+      setFreeProxyMode((p.proxy.mode === 'http' || p.proxy.mode === 'https') ? 'http' : 'socks5');
+      setSelectedFreeProxyId((p.proxy as any)?.freeProxyId || '');
+      // Clear manual proxy inputs so they never pollute each other
+      setProxyHost('');
+      setProxyPort(8080);
+      setProxyMode('http');
+      setProxyUsername('');
+      setProxyPassword('');
+      setChangeIpUrl('');
       setQuickProxyInput('');
+    } else {
+      setProxySubTab('manual');
+      setProxyMode(p.proxy.mode || 'http');
+      setProxyHost(p.proxy.host || '');
+      setProxyPort(p.proxy.port || 8080);
+      setProxyUsername(p.proxy.username || '');
+      setProxyPassword(p.proxy.password || '');
+      setChangeIpUrl((p.proxy as any).changeIpUrl || '');
+      // Clear free proxy inputs
+      setFreeProxyHost('');
+      setFreeProxyPort(1080);
+      setFreeProxyMode('socks5');
+      setSelectedFreeProxyId('');
+
+      if (p.proxy?.enabled && p.proxy?.host) {
+        const parts = [`${p.proxy.host}:${p.proxy.port}`];
+        if (p.proxy.username) {
+          parts.push(p.proxy.username);
+          if (p.proxy.password) parts.push(p.proxy.password);
+        }
+        setQuickProxyInput(parts.join(':'));
+      } else {
+        setQuickProxyInput('');
+      }
     }
-    setProxySubTab('manual');
+
     setProfileCookiesStatus('');
     loadCookiesForEditor(p.id, profileCookiesFormat);
     setIsCreateOpen(true);
@@ -1049,6 +1150,13 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
     }
   };
 
+  const handleCopyProxyIp = (e: React.MouseEvent, ipPort: string) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(ipPort);
+    setCopiedProxyIp(ipPort);
+    setTimeout(() => setCopiedProxyIp(null), 1500);
+  };
+
   const handleSelectFreeProxy = async (freeId: string) => {
     setSelectedFreeProxyId(freeId);
     if (!freeId) return;
@@ -1062,15 +1170,26 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
     setSelectedFreeProxyId(found.id);
     setProxyEnabled(true);
     const mode = found.protocol === 'http' || found.protocol === 'https' ? 'http' : 'socks5';
-    setProxyMode(mode);
-    setProxyHost(found.ip);
-    setProxyPort(found.port);
-    setProxyUsername('');
-    setProxyPassword('');
-    setChangeIpUrl('');
+    setFreeProxyMode(mode);
+    setFreeProxyHost(found.ip);
+    setFreeProxyPort(found.port);
     setSelectedSavedProxyId('');
     setProxyTestResult(null);
     setTestingProxyIp(found.ip);
+
+    const countryMeta = proxyCountries.find((c) => c.code.toUpperCase() === (found.countryCode || '').toUpperCase());
+
+    // Trigger immediate LIVE testing toast
+    showProxyToast({
+      id: String(Date.now()),
+      type: 'testing',
+      title: 'Testing Live Connection...',
+      host: found.ip,
+      port: found.port,
+      protocol: found.protocol || mode,
+      countryFlag: countryMeta?.flag || '🌐',
+      countryName: found.city || found.country || countryMeta?.name || 'Global',
+    });
 
     // Auto test connection, speed and ping live immediately
     if (window.browserAPI) {
@@ -1085,22 +1204,90 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
           password: found.password || undefined,
         });
         setProxyTestResult(res);
+        const dynamicSpeed = res.latencyMs ? `${res.latencyMs}ms` : undefined;
+        const dynamicUptime = res.success ? '100%' : '0%';
+        const speedRating = res.latencyMs ? (res.latencyMs < 90 ? 'Fast' : res.latencyMs < 200 ? 'Good' : 'Moderate') : undefined;
+
         setTestedProxyResults((prev) => ({
           ...prev,
           [found.ip]: {
             success: res.success,
             latencyMs: res.latencyMs,
-            speedRating: res.latencyMs ? (res.latencyMs < 90 ? 'Fast' : res.latencyMs < 200 ? 'Good' : 'Moderate') : undefined,
+            speedRating,
+            uptime: dynamicUptime,
             error: res.error,
           },
         }));
+        setFreeProxies((prev) =>
+          prev.map((item) => {
+            if (item.ip === found.ip) {
+              return {
+                ...item,
+                speed: dynamicSpeed,
+                uptime: dynamicUptime,
+              };
+            }
+            return item;
+          })
+        );
+
+        if (res.success) {
+          showProxyToast({
+            id: String(Date.now()),
+            type: 'success',
+            title: 'Proxy Connected & Verified!',
+            host: found.ip,
+            port: found.port,
+            protocol: found.protocol || mode,
+            countryFlag: countryMeta?.flag || '🌐',
+            countryName: found.city || found.country || countryMeta?.name || 'Global',
+            latencyMs: res.latencyMs,
+            speedRating,
+            exitIp: res.ip || found.ip,
+            location: [res.city, res.country].filter(Boolean).join(', ') || found.country,
+          });
+        } else {
+          showProxyToast({
+            id: String(Date.now()),
+            type: 'error',
+            title: 'Connection Failed',
+            host: found.ip,
+            port: found.port,
+            protocol: found.protocol || mode,
+            countryFlag: countryMeta?.flag || '🌐',
+            countryName: found.city || found.country || countryMeta?.name || 'Global',
+            error: res.error || 'Proxy unreachable or timed out',
+          });
+        }
       } catch (e: any) {
-        const errObj = { success: false, error: e.message };
+        const errObj = { success: false, uptime: '0%', error: e.message };
         setProxyTestResult(errObj);
         setTestedProxyResults((prev) => ({
           ...prev,
           [found.ip]: errObj,
         }));
+        setFreeProxies((prev) =>
+          prev.map((item) => {
+            if (item.ip === found.ip) {
+              return {
+                ...item,
+                uptime: '0%',
+              };
+            }
+            return item;
+          })
+        );
+        showProxyToast({
+          id: String(Date.now()),
+          type: 'error',
+          title: 'Connection Failed',
+          host: found.ip,
+          port: found.port,
+          protocol: found.protocol || mode,
+          countryFlag: countryMeta?.flag || '🌐',
+          countryName: found.city || found.country || countryMeta?.name || 'Global',
+          error: e.message || 'Connection handshake failed',
+        });
       } finally {
         setTestingProxy(false);
         setTestingProxyIp(null);
@@ -1131,15 +1318,26 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
   const handleSaveProfile = async (andLaunch: boolean = false) => {
     if (!isAuthenticated || !name.trim() || !window.browserAPI) return;
 
-    const proxyData: ProxyConfig = {
-      enabled: proxyEnabled,
-      mode: proxyEnabled ? proxyMode : 'direct',
-      host: proxyHost.trim(),
-      port: Number(proxyPort) || 8080,
-      username: proxyUsername ? proxyUsername.trim() : undefined,
-      password: proxyPassword ? proxyPassword.trim() : undefined,
-      changeIpUrl: changeIpUrl ? changeIpUrl.trim() : undefined,
-    };
+    const isFree = proxySubTab === 'free';
+    const proxyData: ProxyConfig = isFree
+      ? {
+          enabled: proxyEnabled,
+          mode: proxyEnabled ? freeProxyMode : 'direct',
+          host: freeProxyHost.trim(),
+          port: Number(freeProxyPort) || 1080,
+          proxyType: 'free',
+          freeProxyId: selectedFreeProxyId || undefined,
+        }
+      : {
+          enabled: proxyEnabled,
+          mode: proxyEnabled ? proxyMode : 'direct',
+          host: proxyHost.trim(),
+          port: Number(proxyPort) || 8080,
+          username: proxyUsername ? proxyUsername.trim() : undefined,
+          password: proxyPassword ? proxyPassword.trim() : undefined,
+          changeIpUrl: changeIpUrl ? changeIpUrl.trim() : undefined,
+          proxyType: 'manual',
+        };
 
     if (editingProfileId) {
       await window.browserAPI.updateProfile(editingProfileId, {
@@ -1202,6 +1400,13 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
 
     setIsCreateOpen(false);
     onRefreshProfiles();
+  };
+
+  const handleOpenUpdateModal = () => {
+    setShowUpdateModal(true);
+    if (!checkingUpdate && updateStatus.status !== 'downloading' && updateStatus.status !== 'downloaded') {
+      handleCheckUpdate();
+    }
   };
 
   const handleCheckUpdate = async () => {
@@ -1278,24 +1483,104 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
   };
 
   const handleTestProxy = async () => {
-    if (!proxyHost.trim() || !window.browserAPI) return;
+    const isFree = proxySubTab === 'free';
+    const targetHost = isFree ? freeProxyHost.trim() : proxyHost.trim();
+    const targetPort = isFree ? (Number(freeProxyPort) || 1080) : (Number(proxyPort) || 8080);
+    const targetMode = isFree ? freeProxyMode : proxyMode;
+    const targetUser = isFree ? undefined : (proxyUsername.trim() || undefined);
+    const targetPass = isFree ? undefined : (proxyPassword.trim() || undefined);
+
+    if (!targetHost || !window.browserAPI) return;
     setTestingProxy(true);
     setProxyTestResult(null);
+
+    showProxyToast({
+      id: String(Date.now()),
+      type: 'testing',
+      title: 'Testing Proxy Connection...',
+      host: targetHost,
+      port: targetPort,
+      protocol: targetMode,
+    });
+
     try {
       const result = await window.browserAPI.testProxy({
         enabled: true,
-        mode: proxyMode,
-        host: proxyHost.trim(),
-        port: Number(proxyPort) || 8080,
-        username: proxyUsername.trim() || undefined,
-        password: proxyPassword.trim() || undefined,
+        mode: targetMode,
+        host: targetHost,
+        port: targetPort,
+        username: targetUser,
+        password: targetPass,
       });
       setProxyTestResult(result);
-      if (result?.detectedMode && result.detectedMode !== 'direct') {
+      if (result) {
+        const dynamicSpeed = result.latencyMs ? `${result.latencyMs}ms` : undefined;
+        const dynamicUptime = result.success ? '100%' : '0%';
+        const ipKey = targetHost;
+        const speedRating = result.latencyMs ? (result.latencyMs < 90 ? 'Fast' : result.latencyMs < 200 ? 'Good' : 'Moderate') : undefined;
+
+        setTestedProxyResults((prev) => ({
+          ...prev,
+          [ipKey]: {
+            success: result.success,
+            latencyMs: result.latencyMs,
+            speedRating,
+            uptime: dynamicUptime,
+            error: result.error,
+          },
+        }));
+        setFreeProxies((prev) =>
+          prev.map((item) => {
+            if (item.ip === ipKey) {
+              return {
+                ...item,
+                speed: dynamicSpeed,
+                uptime: dynamicUptime,
+              };
+            }
+            return item;
+          })
+        );
+
+        if (result.success) {
+          showProxyToast({
+            id: String(Date.now()),
+            type: 'success',
+            title: 'Proxy Connection Verified!',
+            host: targetHost,
+            port: targetPort,
+            protocol: targetMode,
+            latencyMs: result.latencyMs,
+            speedRating,
+            exitIp: result.ip || targetHost,
+            location: [result.city, result.country].filter(Boolean).join(', '),
+          });
+        } else {
+          showProxyToast({
+            id: String(Date.now()),
+            type: 'error',
+            title: 'Connection Failed',
+            host: targetHost,
+            port: targetPort,
+            protocol: targetMode,
+            error: result.error || 'Proxy unreachable or timed out',
+          });
+        }
+      }
+      if (!isFree && result?.detectedMode && result.detectedMode !== 'direct') {
         setProxyMode(result.detectedMode);
       }
     } catch (err: any) {
       setProxyTestResult({ success: false, error: err.message });
+      showProxyToast({
+        id: String(Date.now()),
+        type: 'error',
+        title: 'Connection Failed',
+        host: targetHost,
+        port: targetPort,
+        protocol: targetMode,
+        error: err.message || 'Connection test failed',
+      });
     } finally {
       setTestingProxy(false);
     }
@@ -1499,8 +1784,7 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
             </button>
 
             <button
-              onClick={handleCheckUpdate}
-              disabled={checkingUpdate || updateStatus.status === 'downloading'}
+              onClick={handleOpenUpdateModal}
               title="Check for software updates"
               style={{
                 display: 'flex',
@@ -1562,134 +1846,6 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
 
           </div>
         </div>
-
-        {/* Update Notification Banner */}
-        {updateStatus.status !== 'idle' && (
-          <div
-            style={{
-              padding: '10px 24px',
-              backgroundColor:
-                updateStatus.status === 'downloaded'
-                  ? 'rgba(37, 99, 235, 0.15)'
-                  : updateStatus.status === 'available' || updateStatus.status === 'downloading'
-                  ? 'rgba(16, 185, 129, 0.15)'
-                  : updateStatus.status === 'error'
-                  ? 'rgba(239, 68, 68, 0.15)'
-                  : 'rgba(51, 65, 85, 0.25)',
-              borderBottom: `1px solid ${
-                updateStatus.status === 'downloaded'
-                  ? '#3b82f640'
-                  : updateStatus.status === 'available' || updateStatus.status === 'downloading'
-                  ? '#10b98140'
-                  : updateStatus.status === 'error'
-                  ? '#ef444440'
-                  : '#334155'
-              }`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12 }}>
-              {updateStatus.status === 'available' && (
-                <>
-                  <ArrowDownCircle size={15} color="#34d399" />
-                  <span style={{ color: '#ffffff', fontWeight: 600 }}>
-                    A new version (v{updateStatus.version}) is available!
-                  </span>
-                </>
-              )}
-              {updateStatus.status === 'downloading' && (
-                <>
-                  <Loader2 size={15} color="#34d399" className="animate-spin" />
-                  <span style={{ color: '#ffffff' }}>
-                    Downloading update: <strong>{updateStatus.percent}%</strong>
-                  </span>
-                </>
-              )}
-              {updateStatus.status === 'downloaded' && (
-                <>
-                  <CheckCircle size={15} color="#60a5fa" />
-                  <span style={{ color: '#ffffff', fontWeight: 600 }}>
-                    Update v{updateStatus.version} is ready to install!
-                  </span>
-                </>
-              )}
-              {updateStatus.status === 'not-available' && (
-                <>
-                  <CheckCircle size={15} color="#94a3b8" />
-                  <span style={{ color: '#cbd5e1' }}>
-                    Multi Agent is up to date (current latest version).
-                  </span>
-                </>
-              )}
-              {updateStatus.status === 'error' && (
-                <>
-                  <AlertCircle size={15} color="#f87171" />
-                  <span style={{ color: '#fca5a5' }}>
-                    Update check: {updateStatus.message}
-                  </span>
-                </>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {updateStatus.status === 'available' && (
-                <button
-                  type="button"
-                  onClick={handleDownloadUpdate}
-                  style={{
-                    padding: '5px 12px',
-                    backgroundColor: '#10b981',
-                    border: 'none',
-                    borderRadius: 6,
-                    color: '#ffffff',
-                    fontSize: 11,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Download Now
-                </button>
-              )}
-              {updateStatus.status === 'downloaded' && (
-                <button
-                  type="button"
-                  onClick={handleInstallUpdate}
-                  style={{
-                    padding: '5px 14px',
-                    backgroundColor: '#3b82f6',
-                    border: 'none',
-                    borderRadius: 6,
-                    color: '#ffffff',
-                    fontSize: 11,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    boxShadow: '0 2px 8px rgba(59, 130, 246, 0.3)',
-                  }}
-                >
-                  Restart & Install
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setUpdateStatus({ status: 'idle' })}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: '#94a3b8',
-                  cursor: 'pointer',
-                  padding: 4,
-                  display: 'flex',
-                  alignItems: 'center',
-                }}
-                title="Dismiss"
-              >
-                <X size={14} />
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Filter and Search Bar */}
         <div
@@ -2127,7 +2283,10 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
                       {hasProxy ? (
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                           <span
-                            onClick={() => handleOpenEdit(p, 'proxy')}
+                            onClick={() => {
+                              const isFree = (p.proxy as any)?.proxyType === 'free' || Boolean((p.proxy as any)?.freeProxyId);
+                              handleOpenEdit(p, 'proxy', isFree ? 'free' : 'manual');
+                            }}
                             style={{
                               color: '#cbd5e1',
                               fontSize: 13,
@@ -2138,14 +2297,17 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
                               cursor: 'pointer',
                               transition: 'color 0.15s ease',
                             }}
-                            title="Click to configure proxy"
+                            title={`Click to configure ${((p.proxy as any)?.proxyType === 'free' || (p.proxy as any)?.freeProxyId) ? 'Free' : 'Manual'} proxy`}
                             onMouseEnter={(e) => { e.currentTarget.style.color = '#60a5fa'; }}
                             onMouseLeave={(e) => { e.currentTarget.style.color = '#cbd5e1'; }}
                           >
                             {p.proxy.host.length > 18 ? `${p.proxy.host.slice(0, 16)}...` : p.proxy.host}
                           </span>
                           <span
-                            onClick={() => handleOpenEdit(p, 'proxy')}
+                            onClick={() => {
+                              const isFree = (p.proxy as any)?.proxyType === 'free' || Boolean((p.proxy as any)?.freeProxyId);
+                              handleOpenEdit(p, 'proxy', isFree ? 'free' : 'manual');
+                            }}
                             style={{ color: '#10b981', display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}
                             title="Proxy Enabled - Click to configure"
                           >
@@ -2164,7 +2326,7 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
                         </div>
                       ) : (
                         <span
-                          onClick={() => handleOpenEdit(p, 'proxy')}
+                          onClick={() => handleOpenEdit(p, 'proxy', 'manual')}
                           style={{ color: '#64748b', fontSize: 13, cursor: 'pointer', transition: 'color 0.15s ease' }}
                           title="Click to configure proxy"
                           onMouseEnter={(e) => { e.currentTarget.style.color = '#3b82f6'; }}
@@ -2205,7 +2367,16 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
                             e.currentTarget.style.color = '#e2e8f0';
                           }}
                         >
-                          {p.language || 'en-US'}
+                          {(() => {
+                            const code = p.language || 'en-US';
+                            const found = ALL_LANGUAGES.find((l) => l.code === code) || POPULAR_LANGUAGES.find((l) => l.code === code);
+                            return (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                <span>{found?.flag || '🌐'}</span>
+                                <span>{code}</span>
+                              </span>
+                            );
+                          })()}
                         </span>
                       </div>
                     </td>
@@ -2931,7 +3102,7 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
 
             {/* Editor Body Content Area */}
             <div style={{ flex: 1, minHeight: 0, padding: '24px 28px', overflowY: 'auto' }}>
-              <div style={{ maxWidth: 880, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <div style={{ maxWidth: editorTab === 'proxy' ? 1120 : 880, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20, transition: 'max-width 0.2s ease' }}>
 
                 {/* TAB 1: GENERAL SETTINGS */}
                 {editorTab === 'general' && (
@@ -3382,10 +3553,13 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
                           <div>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
                               <label style={{ fontSize: 12, fontWeight: 500, color: '#cbd5e1' }}>
-                                Language (Default: EN)
+                                Language (A – Z, {ALL_LANGUAGES.length} Countries)
                               </label>
                               <span style={{ fontSize: 10.5, color: '#38bdf8', fontWeight: 600 }}>
-                                {language}
+                                {(() => {
+                                  const cur = ALL_LANGUAGES.find((l) => l.code === language) || POPULAR_LANGUAGES.find((l) => l.code === language);
+                                  return cur ? `${cur.flag} ${language}` : language;
+                                })()}
                               </span>
                             </div>
                             <select
@@ -3403,26 +3577,14 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
                                 boxSizing: 'border-box',
                               }}
                             >
-                              <option value="en-US">English (US) — en-US (Default)</option>
-                              <option value="en-GB">English (UK) — en-GB</option>
-                              <option value="es-ES">Spanish (Spain) — es-ES</option>
-                              <option value="es-MX">Spanish (Mexico) — es-MX</option>
-                              <option value="fr-FR">French (France) — fr-FR</option>
-                              <option value="de-DE">German (Germany) — de-DE</option>
-                              <option value="it-IT">Italian (Italy) — it-IT</option>
-                              <option value="pt-BR">Portuguese (Brazil) — pt-BR</option>
-                              <option value="ru-RU">Russian (Russia) — ru-RU</option>
-                              <option value="zh-CN">Chinese (Simplified) — zh-CN</option>
-                              <option value="ja-JP">Japanese (Japan) — ja-JP</option>
-                              <option value="ko-KR">Korean (South Korea) — ko-KR</option>
-                              <option value="bn-BD">Bengali (Bangladesh) — bn-BD</option>
-                              <option value="hi-IN">Hindi (India) — hi-IN</option>
-                              <option value="ar-SA">Arabic (Saudi Arabia) — ar-SA</option>
-                              <option value="tr-TR">Turkish (Turkey) — tr-TR</option>
-                              <option value="nl-NL">Dutch (Netherlands) — nl-NL</option>
-                              <option value="pl-PL">Polish (Poland) — pl-PL</option>
-                              <option value="vi-VN">Vietnamese (Vietnam) — vi-VN</option>
-                              <option value="id-ID">Indonesian (Indonesia) — id-ID</option>
+                              {ALL_LANGUAGES.map((lang) => (
+                                <option key={`lang-${lang.code}-${lang.country}`} value={lang.code}>
+                                  {lang.flag} {lang.country}: {lang.name} ({lang.code})
+                                </option>
+                              ))}
+                              {language && !ALL_LANGUAGES.some((l) => l.code === language) && (
+                                <option value={language}>{language}</option>
+                              )}
                             </select>
                             <span style={{ display: 'block', fontSize: 11, color: '#64748b', marginTop: 4 }}>
                               Sets browser UI language, navigator.language & Accept-Language
@@ -3433,10 +3595,14 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
                           <div>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
                               <label style={{ fontSize: 12, fontWeight: 500, color: '#cbd5e1' }}>
-                                Time Zone
+                                Time Zone (A – Z, {ALL_TIMEZONES.length} Regions)
                               </label>
                               <span style={{ fontSize: 10.5, color: '#f59e0b', fontWeight: 600 }}>
-                                {timezone === 'auto' ? 'Auto-match' : timezone.split('/').pop()?.replace(/_/g, ' ')}
+                                {(() => {
+                                  if (timezone === 'auto') return '🌐 Auto-match';
+                                  const cur = ALL_TIMEZONES.find((t) => t.id === timezone) || POPULAR_TIMEZONES.find((t) => t.id === timezone);
+                                  return cur ? `${cur.flag} ${cur.offset}` : (timezone.split('/').pop()?.replace(/_/g, ' ') || timezone);
+                                })()}
                               </span>
                             </div>
                             <select
@@ -3455,31 +3621,14 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
                               }}
                             >
                               <option value="auto">🌐 Auto-detect (Match Proxy IP / System)</option>
-                              <option value="America/New_York">🇺🇸 America/New_York (US Eastern UTC-5)</option>
-                              <option value="America/Chicago">🇺🇸 America/Chicago (US Central UTC-6)</option>
-                              <option value="America/Denver">🇺🇸 America/Denver (US Mountain UTC-7)</option>
-                              <option value="America/Los_Angeles">🇺🇸 America/Los_Angeles (US Pacific UTC-8)</option>
-                              <option value="America/Toronto">🇨🇦 America/Toronto (Canada Eastern UTC-5)</option>
-                              <option value="America/Sao_Paulo">🇧🇷 America/Sao_Paulo (Brazil UTC-3)</option>
-                              <option value="Europe/London">🇬🇧 Europe/London (GMT/BST UTC+0)</option>
-                              <option value="Europe/Paris">🇫🇷 Europe/Paris (CET UTC+1)</option>
-                              <option value="Europe/Berlin">🇩🇪 Europe/Berlin (Germany UTC+1)</option>
-                              <option value="Europe/Amsterdam">🇳🇱 Europe/Amsterdam (Netherlands UTC+1)</option>
-                              <option value="Europe/Madrid">🇪🇸 Europe/Madrid (Spain UTC+1)</option>
-                              <option value="Europe/Rome">🇮🇹 Europe/Rome (Italy UTC+1)</option>
-                              <option value="Europe/Moscow">🇷🇺 Europe/Moscow (Russia UTC+3)</option>
-                              <option value="Europe/Kiev">🇺🇦 Europe/Kiev (Ukraine UTC+2)</option>
-                              <option value="Asia/Dubai">🇦🇪 Asia/Dubai (UAE UTC+4)</option>
-                              <option value="Asia/Kolkata">🇮🇳 Asia/Kolkata (India IST UTC+5:30)</option>
-                              <option value="Asia/Dhaka">🇧🇩 Asia/Dhaka (Bangladesh UTC+6)</option>
-                              <option value="Asia/Bangkok">🇹🇭 Asia/Bangkok (Thailand UTC+7)</option>
-                              <option value="Asia/Singapore">🇸🇬 Asia/Singapore (Singapore UTC+8)</option>
-                              <option value="Asia/Hong_Kong">🇭🇰 Asia/Hong_Kong (Hong Kong UTC+8)</option>
-                              <option value="Asia/Shanghai">🇨🇳 Asia/Shanghai (China UTC+8)</option>
-                              <option value="Asia/Tokyo">🇯🇵 Asia/Tokyo (Japan JST UTC+9)</option>
-                              <option value="Asia/Seoul">🇰🇷 Asia/Seoul (South Korea UTC+9)</option>
-                              <option value="Australia/Sydney">🇦🇺 Australia/Sydney (AEST UTC+10)</option>
-                              <option value="UTC">🌐 UTC (Coordinated Universal Time)</option>
+                              {ALL_TIMEZONES.map((tz) => (
+                                <option key={`tz-${tz.id}-${tz.country}`} value={tz.id}>
+                                  {tz.flag} {tz.country}: {tz.label} ({tz.id})
+                                </option>
+                              ))}
+                              {timezone && timezone !== 'auto' && !ALL_TIMEZONES.some((t) => t.id === timezone) && (
+                                <option value={timezone}>{timezone}</option>
+                              )}
                             </select>
                             <span style={{ display: 'block', fontSize: 11, color: '#64748b', marginTop: 4 }}>
                               Emulates system clock, TZ env & Intl.DateTimeFormat
@@ -3866,115 +4015,6 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
                             )}
                           </button>
                         </div>
-                        {/* TOP PROMINENT CONNECTION STATUS BANNER */}
-                        {(testingProxy || proxyTestResult) && (
-                          <div
-                            style={{
-                              padding: '12px 16px',
-                              borderRadius: 10,
-                              backgroundColor: testingProxy
-                                ? 'rgba(56, 189, 248, 0.08)'
-                                : proxyTestResult?.success
-                                ? 'rgba(16, 185, 129, 0.12)'
-                                : 'rgba(239, 68, 68, 0.14)',
-                              border: `1.5px solid ${
-                                testingProxy
-                                  ? 'rgba(56, 189, 248, 0.4)'
-                                  : proxyTestResult?.success
-                                  ? 'rgba(16, 185, 129, 0.45)'
-                                  : 'rgba(239, 68, 68, 0.45)'
-                              }`,
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              gap: 12,
-                            }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                              {testingProxy ? (
-                                <Loader2 size={22} className="animate-spin" color="#38bdf8" />
-                              ) : proxyTestResult?.success ? (
-                                <CheckCircle2 size={22} color="#34d399" />
-                              ) : (
-                                <AlertCircle size={22} color="#f87171" />
-                              )}
-
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                <div
-                                  style={{
-                                    fontSize: 13,
-                                    fontWeight: 700,
-                                    color: testingProxy
-                                      ? '#38bdf8'
-                                      : proxyTestResult?.success
-                                      ? '#34d399'
-                                      : '#f87171',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 6,
-                                  }}
-                                >
-                                  {testingProxy ? (
-                                    'Testing Proxy Connection...'
-                                  ) : proxyTestResult?.success ? (
-                                    <>
-                                      <span>✓ Connection Active</span>
-                                      <span style={{ fontSize: 11, fontWeight: 500, color: '#a7f3d0' }}>
-                                        · Ping: {proxyTestResult.latencyMs}ms
-                                      </span>
-                                    </>
-                                  ) : (
-                                    <span>✗ Connection Failed</span>
-                                  )}
-                                </div>
-
-                                <div style={{ fontSize: 11, color: '#cbd5e1' }}>
-                                  {testingProxy ? (
-                                    `Testing socket handshake to ${proxyHost}:${proxyPort}...`
-                                  ) : proxyTestResult?.success ? (
-                                    <>
-                                      <span>Host: {proxyHost}:{proxyPort}</span>
-                                      {proxyTestResult.ip && (
-                                        <span> · Exit IP: {proxyTestResult.ip}</span>
-                                      )}
-                                      {(proxyTestResult.country || proxyTestResult.city) && (
-                                        <span> · 📍 {[proxyTestResult.city, proxyTestResult.country].filter(Boolean).join(', ')}</span>
-                                      )}
-                                      {proxyTestResult.timezone && (
-                                        <span> · 🕒 {proxyTestResult.timezone}</span>
-                                      )}
-                                    </>
-                                  ) : (
-                                    <span>
-                                      {proxyTestResult?.error || 'Target proxy is currently unreachable. Please pick another connectable proxy below.'}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-
-                            {!testingProxy && (
-                              <button
-                                type="button"
-                                onClick={handleTestProxy}
-                                disabled={testingProxy || !proxyHost.trim()}
-                                style={{
-                                  padding: '6px 14px',
-                                  borderRadius: 6,
-                                  backgroundColor: proxyTestResult?.success ? '#064e3b' : '#7f1d1d',
-                                  border: `1px solid ${proxyTestResult?.success ? '#059669' : '#dc2626'}`,
-                                  color: proxyTestResult?.success ? '#34d399' : '#fca5a5',
-                                  fontSize: 11,
-                                  fontWeight: 700,
-                                  cursor: 'pointer',
-                                  whiteSpace: 'nowrap',
-                                }}
-                              >
-                                {proxyTestResult?.success ? 'Retest' : 'Retry'}
-                              </button>
-                            )}
-                          </div>
-                        )}
                         {/* 1. Free Proxy Hub Panel with Country Selector */}
                         {proxySubTab === 'free' && (
                           <div
@@ -3989,9 +4029,9 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
                           }}
                         >
                           {/* Header */}
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <span style={{ fontSize: 13, fontWeight: 700, color: '#34d399' }}>
+                              <span style={{ fontSize: 13.5, fontWeight: 700, color: '#34d399' }}>
                                 🌐 Free Connectable Proxy Hub
                               </span>
                               <span
@@ -4004,32 +4044,91 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
                                   fontWeight: 600,
                                 }}
                               >
-                                {freeProxies.length} Total Verified
+                                {freeProxies.length} Total Curated
                               </span>
                             </div>
 
-                            <button
-                              type="button"
-                              onClick={() => handleRefreshFreeProxies()}
-                              disabled={loadingFreeProxies}
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 5,
-                                padding: '5px 12px',
-                                backgroundColor: '#064e3b',
-                                border: '1px solid #059669',
-                                borderRadius: 6,
-                                color: '#34d399',
-                                fontSize: 11,
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                              }}
-                              title="Scan and verify fresh connectable proxies for this country"
-                            >
-                              {loadingFreeProxies ? <Loader2 size={12} className="animate-spin" /> : <RotateCw size={12} />}
-                              {loadingFreeProxies ? 'Scanning & Testing...' : 'Scan Live Proxies'}
-                            </button>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              {/* Grid / Table View Mode Toggle */}
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  backgroundColor: '#0c1412',
+                                  border: '1px solid #134e3f',
+                                  borderRadius: 6,
+                                  padding: 2,
+                                  gap: 2,
+                                }}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => setFreeProxyViewMode('grid')}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    padding: '4px 8px',
+                                    borderRadius: 4,
+                                    border: 'none',
+                                    backgroundColor: freeProxyViewMode === 'grid' ? '#059669' : 'transparent',
+                                    color: freeProxyViewMode === 'grid' ? '#ffffff' : '#94a3b8',
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s ease',
+                                  }}
+                                  title="Cards Grid View"
+                                >
+                                  <LayoutGrid size={12} />
+                                  <span>Grid</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setFreeProxyViewMode('table')}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    padding: '4px 8px',
+                                    borderRadius: 4,
+                                    border: 'none',
+                                    backgroundColor: freeProxyViewMode === 'table' ? '#059669' : 'transparent',
+                                    color: freeProxyViewMode === 'table' ? '#ffffff' : '#94a3b8',
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s ease',
+                                  }}
+                                  title="Data Table View"
+                                >
+                                  <List size={12} />
+                                  <span>Table</span>
+                                </button>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => handleRefreshFreeProxies()}
+                                disabled={loadingFreeProxies}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 5,
+                                  padding: '5px 12px',
+                                  backgroundColor: '#064e3b',
+                                  border: '1px solid #059669',
+                                  borderRadius: 6,
+                                  color: '#34d399',
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                }}
+                                title="Scan and verify fresh connectable proxies for this country"
+                              >
+                                {loadingFreeProxies ? <Loader2 size={12} className="animate-spin" /> : <RotateCw size={12} />}
+                                {loadingFreeProxies ? 'Scanning & Testing...' : 'Scan Live Proxies'}
+                              </button>
+                            </div>
                           </div>
 
                           {/* Side-by-Side: Country Dropdown & Free IP/Proxy Dropdown ("tar pase") */}
@@ -4087,13 +4186,14 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
                                       }}
                                     >
                                       {proxyCountries.map((c) => {
-                                        const count = freeProxies.filter((fp) => {
+                                        const liveCount = freeProxies.filter((fp) => {
                                           if (c.code === 'ALL') return true;
                                           return (fp.countryCode || '').toUpperCase() === c.code.toUpperCase();
                                         }).length;
+                                        const displayCount = c.count !== undefined && c.count > 0 ? c.count : liveCount;
                                         return (
                                           <option key={c.code} value={c.code}>
-                                            {c.flag} {c.name} {count > 0 ? `(${count} connectable)` : ''}
+                                            {c.flag} {c.name} {displayCount > 0 ? `(${displayCount} available)` : ''}
                                           </option>
                                         );
                                       })}
@@ -4139,9 +4239,11 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
                                         const locationLabel = fp.city ? `${fp.city}` : fp.country;
                                         const statusSnippet = test
                                           ? test.success
-                                            ? ` · ✓ ${test.latencyMs}ms (${test.speedRating})`
-                                            : ' · ✗ Failed'
-                                          : ` · ⚡ ${fp.speed || 'Test'}`;
+                                            ? ` · ✓ ${test.latencyMs}ms (${test.speedRating}) · 100% Up`
+                                            : ' · ✗ Failed (0% Up)'
+                                          : fp.speed
+                                          ? ` · ⚡ ${fp.speed}${fp.uptime ? ` · ${fp.uptime}` : ''}`
+                                          : ' · ⚡ Untested';
                                         return (
                                           <option key={fp.id} value={fp.id}>
                                             [{fp.countryCode || '??'}] {fp.ip}:{fp.port} ({locationLabel}) - {fp.protocol.toUpperCase()}{statusSnippet}
@@ -4154,7 +4256,7 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
 
                                 {/* Popular Country Quick Pills */}
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 2 }}>
-                                  {proxyCountries.slice(0, 10).map((c) => {
+                                  {(popularProxyCountries && popularProxyCountries.length > 0 ? popularProxyCountries : proxyCountries.slice(0, 15)).map((c) => {
                                     const isSelected = selectedCountryCode.toUpperCase() === c.code.toUpperCase();
                                     return (
                                       <button
@@ -4233,130 +4335,368 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
                                   </div>
                                 </div>
 
-                                {/* Clickable IP Cards Grid — LIVE TEST ON CLICK */}
-                                <div style={{ marginTop: 2 }}>
-                                  <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>
-                                    👆 Click any IP below to test <strong style={{ color: '#34d399' }}>Live Speed, Ping & Connection</strong>:
+                                {/* Clickable IP Display: Grid Cards vs Data Table */}
+                                <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                                    <div style={{ fontSize: 11.5, color: '#94a3b8' }}>
+                                      👆 Click any IP below to test <strong style={{ color: '#34d399' }}>Live Speed, Ping & Connection</strong>:
+                                    </div>
+                                    <div style={{ fontSize: 11, color: '#6ee7b7', fontWeight: 600 }}>
+                                      {filtered.length} Connectable IPs Found
+                                    </div>
                                   </div>
 
                                   {filtered.length > 0 ? (
-                                    <div
-                                      style={{
-                                        display: 'grid',
-                                        gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))',
-                                        gap: 8,
-                                        maxHeight: 200,
-                                        overflowY: 'auto',
-                                        paddingRight: 4,
-                                      }}
-                                    >
-                                      {filtered.map((fp) => {
-                                        const isCurrent = proxyHost === fp.ip && Number(proxyPort) === Number(fp.port);
-                                        const isTestingThis = testingProxy && testingProxyIp === fp.ip;
-                                        const test = testedProxyResults[fp.ip];
+                                    freeProxyViewMode === 'grid' ? (
+                                      /* GRID CARDS VIEW — Spacious, Roomy, 520px max height */
+                                      <div
+                                        style={{
+                                          display: 'grid',
+                                          gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+                                          gap: 10,
+                                          minHeight: 340,
+                                          maxHeight: 520,
+                                          overflowY: 'auto',
+                                          paddingRight: 6,
+                                          paddingBottom: 4,
+                                        }}
+                                      >
+                                        {filtered.map((fp) => {
+                                          const isCurrent = (selectedFreeProxyId === fp.id) || (freeProxyHost === fp.ip && Number(freeProxyPort) === Number(fp.port));
+                                          const isTestingThis = testingProxy && testingProxyIp === fp.ip;
+                                          const test = testedProxyResults[fp.ip];
+                                          const isCopied = copiedProxyIp === `${fp.ip}:${fp.port}`;
+                                          const countryMeta = proxyCountries.find((c) => c.code.toUpperCase() === (fp.countryCode || '').toUpperCase());
 
-                                        return (
-                                          <div
-                                            key={fp.id}
-                                            onClick={() => handleTestAndApplyProxy(fp)}
-                                            style={{
-                                              padding: '9px 11px',
-                                              borderRadius: 8,
-                                              backgroundColor: isTestingThis
-                                                ? 'rgba(56, 189, 248, 0.12)'
-                                                : isCurrent
-                                                ? 'rgba(5, 150, 105, 0.2)'
-                                                : '#0d1316',
-                                              border: isTestingThis
-                                                ? '1.5px solid #38bdf8'
-                                                : isCurrent
-                                                ? '1.5px solid #34d399'
-                                                : '1px solid #1a2a24',
-                                              cursor: 'pointer',
-                                              display: 'flex',
-                                              flexDirection: 'column',
-                                              gap: 6,
-                                              transition: 'all 0.15s ease',
-                                              boxShadow: isCurrent ? '0 0 10px rgba(52, 211, 153, 0.15)' : 'none',
-                                            }}
-                                            title="Click to select and test this IP live"
-                                          >
-                                            {/* Top Line: Location & Speed */}
-                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                                                <span style={{ fontSize: 12, fontWeight: 700, color: '#f1f5f9' }}>
-                                                  {fp.city || fp.country}
-                                                </span>
+                                          return (
+                                            <div
+                                              key={fp.id}
+                                              onClick={() => handleTestAndApplyProxy(fp)}
+                                              style={{
+                                                padding: '11px 13px',
+                                                borderRadius: 9,
+                                                backgroundColor: isTestingThis
+                                                  ? 'rgba(56, 189, 248, 0.12)'
+                                                  : isCurrent
+                                                  ? 'rgba(5, 150, 105, 0.22)'
+                                                  : '#0d1316',
+                                                border: isTestingThis
+                                                  ? '1.5px solid #38bdf8'
+                                                  : isCurrent
+                                                  ? '1.5px solid #34d399'
+                                                  : '1px solid #1a2a24',
+                                                cursor: 'pointer',
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                gap: 8,
+                                                transition: 'all 0.15s ease',
+                                                boxShadow: isCurrent ? '0 0 12px rgba(52, 211, 153, 0.2)' : 'none',
+                                              }}
+                                              title="Click to select, connect, and test this IP live"
+                                            >
+                                              {/* Top Line: Flag, Location & Protocol */}
+                                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                                                  <span style={{ fontSize: 13 }}>{countryMeta?.flag || '🌐'}</span>
+                                                  <span style={{ fontSize: 12.5, fontWeight: 700, color: '#f1f5f9', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                    {fp.city || fp.country}
+                                                  </span>
+                                                  <span
+                                                    style={{
+                                                      fontSize: 9.5,
+                                                      padding: '1px 5px',
+                                                      borderRadius: 3,
+                                                      backgroundColor: '#064e3b',
+                                                      color: '#6ee7b7',
+                                                      fontWeight: 700,
+                                                      textTransform: 'uppercase',
+                                                    }}
+                                                  >
+                                                    {fp.countryCode || '??'}
+                                                  </span>
+                                                </div>
+
                                                 <span
                                                   style={{
-                                                    fontSize: 9,
-                                                    padding: '1px 4px',
-                                                    borderRadius: 3,
-                                                    backgroundColor: '#064e3b',
-                                                    color: '#6ee7b7',
+                                                    fontSize: 9.5,
+                                                    padding: '2px 6px',
+                                                    borderRadius: 4,
+                                                    backgroundColor: fp.protocol.toLowerCase().includes('socks') ? 'rgba(59, 130, 246, 0.2)' : 'rgba(168, 85, 247, 0.2)',
+                                                    color: fp.protocol.toLowerCase().includes('socks') ? '#60a5fa' : '#c084fc',
                                                     fontWeight: 700,
                                                     textTransform: 'uppercase',
                                                   }}
                                                 >
-                                                  {fp.countryCode || '??'}
+                                                  {fp.protocol}
                                                 </span>
                                               </div>
 
-                                              {/* Speed / Testing Indicator */}
-                                              {isTestingThis ? (
-                                                <span
+                                              {/* Middle Line: IP:Port with Quick Copy */}
+                                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                <span style={{ fontSize: 12, color: isCurrent ? '#f1f5f9' : '#e2e8f0', fontFamily: 'monospace', fontWeight: 700 }}>
+                                                  {fp.ip}:{fp.port}
+                                                </span>
+
+                                                <button
+                                                  type="button"
+                                                  onClick={(e) => handleCopyProxyIp(e, `${fp.ip}:${fp.port}`)}
                                                   style={{
+                                                    background: 'transparent',
+                                                    border: 'none',
+                                                    padding: '2px 5px',
+                                                    borderRadius: 4,
+                                                    color: isCopied ? '#34d399' : '#64748b',
+                                                    cursor: 'pointer',
                                                     fontSize: 10,
-                                                    fontWeight: 700,
-                                                    color: '#38bdf8',
+                                                    fontWeight: 600,
                                                     display: 'flex',
                                                     alignItems: 'center',
                                                     gap: 3,
                                                   }}
+                                                  title="Copy IP:Port"
                                                 >
-                                                  <Loader2 size={11} className="animate-spin" /> Testing...
-                                                </span>
-                                              ) : (
+                                                  {isCopied ? <Check size={11} color="#34d399" /> : <Copy size={11} />}
+                                                  <span>{isCopied ? 'Copied' : 'Copy'}</span>
+                                                </button>
+                                              </div>
+
+                                              {/* Bottom Line: Speed, Uptime & Connection Badge */}
+                                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 2, borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                                                {isTestingThis ? (
+                                                  <span style={{ fontSize: 10.5, fontWeight: 700, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                    <Loader2 size={11} className="animate-spin" /> Testing...
+                                                  </span>
+                                                ) : test ? (
+                                                  test.success ? (
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                                      <span style={{ fontSize: 10.5, fontWeight: 700, color: '#34d399', display: 'flex', alignItems: 'center', gap: 2 }}>
+                                                        ⚡ {test.latencyMs}ms {test.speedRating ? `(${test.speedRating})` : ''}
+                                                      </span>
+                                                      <span style={{ fontSize: 9, padding: '1px 4px', borderRadius: 3, backgroundColor: 'rgba(5, 150, 105, 0.25)', color: '#6ee7b7', fontWeight: 600 }}>
+                                                        100% Up
+                                                      </span>
+                                                    </div>
+                                                  ) : (
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                      <span style={{ fontSize: 10.5, fontWeight: 700, color: '#ef4444' }}>
+                                                        ✗ Failed
+                                                      </span>
+                                                      <span style={{ fontSize: 9, padding: '1px 4px', borderRadius: 3, backgroundColor: 'rgba(239, 68, 68, 0.2)', color: '#f87171', fontWeight: 600 }}>
+                                                        0% Up
+                                                      </span>
+                                                    </div>
+                                                  )
+                                                ) : fp.speed ? (
+                                                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                                    <span style={{ fontSize: 10.5, fontWeight: 700, color: isCurrent ? '#34d399' : '#6ee7b7' }}>
+                                                      ⚡ {fp.speed}
+                                                    </span>
+                                                    {fp.uptime && (
+                                                      <span style={{ fontSize: 9, padding: '1px 4px', borderRadius: 3, backgroundColor: 'rgba(5, 150, 105, 0.25)', color: '#6ee7b7', fontWeight: 600 }}>
+                                                        {fp.uptime}
+                                                      </span>
+                                                    )}
+                                                  </div>
+                                                ) : (
+                                                  <span style={{ fontSize: 10, fontWeight: 500, color: '#64748b' }}>
+                                                    ⚡ Untested
+                                                  </span>
+                                                )}
+
                                                 <span
                                                   style={{
                                                     fontSize: 10,
                                                     fontWeight: 700,
-                                                    color: isCurrent ? '#34d399' : '#94a3b8',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    gap: 2,
+                                                    padding: '2px 8px',
+                                                    borderRadius: 4,
+                                                    backgroundColor: isCurrent ? '#059669' : 'rgba(255,255,255,0.06)',
+                                                    color: isCurrent ? '#ffffff' : '#94a3b8',
                                                   }}
                                                 >
-                                                  ⚡ {fp.speed}
+                                                  {isCurrent ? '✓ Connected' : 'Connect'}
                                                 </span>
-                                              )}
+                                              </div>
                                             </div>
+                                          );
+                                        })}
+                                      </div>
+                                    ) : (
+                                      /* DATA TABLE VIEW — Clean, High-Density Scanning */
+                                      <div
+                                        style={{
+                                          minHeight: 340,
+                                          maxHeight: 520,
+                                          overflowY: 'auto',
+                                          border: '1px solid #134e3f',
+                                          borderRadius: 8,
+                                          backgroundColor: '#0a100d',
+                                        }}
+                                      >
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 11.5 }}>
+                                          <thead>
+                                            <tr style={{ backgroundColor: '#0f1a16', position: 'sticky', top: 0, zIndex: 2, borderBottom: '1px solid #134e3f' }}>
+                                              <th style={{ padding: '8px 12px', color: '#6ee7b7', fontWeight: 700 }}>Country / City</th>
+                                              <th style={{ padding: '8px 12px', color: '#6ee7b7', fontWeight: 700 }}>IP & Port</th>
+                                              <th style={{ padding: '8px 12px', color: '#6ee7b7', fontWeight: 700 }}>Protocol</th>
+                                              <th style={{ padding: '8px 12px', color: '#6ee7b7', fontWeight: 700 }}>Live Speed</th>
+                                              <th style={{ padding: '8px 12px', color: '#6ee7b7', fontWeight: 700 }}>Uptime</th>
+                                              <th style={{ padding: '8px 12px', color: '#6ee7b7', fontWeight: 700, textAlign: 'right' }}>Action</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {filtered.map((fp) => {
+                                              const isCurrent = (selectedFreeProxyId === fp.id) || (freeProxyHost === fp.ip && Number(freeProxyPort) === Number(fp.port));
+                                              const isTestingThis = testingProxy && testingProxyIp === fp.ip;
+                                              const test = testedProxyResults[fp.ip];
+                                              const isCopied = copiedProxyIp === `${fp.ip}:${fp.port}`;
+                                              const countryMeta = proxyCountries.find((c) => c.code.toUpperCase() === (fp.countryCode || '').toUpperCase());
 
-                                            {/* Bottom Line: IP:Port & Protocol */}
-                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                              <span style={{ fontSize: 11, color: isCurrent ? '#f1f5f9' : '#cbd5e1', fontFamily: 'monospace', fontWeight: isCurrent ? 700 : 500 }}>
-                                                {fp.ip}:{fp.port}
-                                              </span>
-                                              <span
-                                                style={{
-                                                  fontSize: 9,
-                                                  padding: '1px 5px',
-                                                  borderRadius: 3,
-                                                  backgroundColor: fp.protocol.toLowerCase().includes('socks') ? 'rgba(59, 130, 246, 0.2)' : 'rgba(168, 85, 247, 0.2)',
-                                                  color: fp.protocol.toLowerCase().includes('socks') ? '#60a5fa' : '#c084fc',
-                                                  fontWeight: 600,
-                                                  textTransform: 'uppercase',
-                                                }}
-                                              >
-                                                {fp.protocol}
-                                              </span>
-                                            </div>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
+                                              return (
+                                                <tr
+                                                  key={fp.id}
+                                                  onClick={() => handleTestAndApplyProxy(fp)}
+                                                  style={{
+                                                    borderBottom: '1px solid rgba(19, 78, 63, 0.4)',
+                                                    backgroundColor: isTestingThis
+                                                      ? 'rgba(56, 189, 248, 0.12)'
+                                                      : isCurrent
+                                                      ? 'rgba(5, 150, 105, 0.2)'
+                                                      : 'transparent',
+                                                    cursor: 'pointer',
+                                                    transition: 'background-color 0.15s ease',
+                                                  }}
+                                                  onMouseEnter={(e) => {
+                                                    if (!isCurrent && !isTestingThis) {
+                                                      e.currentTarget.style.backgroundColor = 'rgba(16, 185, 129, 0.08)';
+                                                    }
+                                                  }}
+                                                  onMouseLeave={(e) => {
+                                                    if (!isCurrent && !isTestingThis) {
+                                                      e.currentTarget.style.backgroundColor = 'transparent';
+                                                    }
+                                                  }}
+                                                >
+                                                  <td style={{ padding: '8px 12px', color: '#f1f5f9', fontWeight: 600 }}>
+                                                    <span style={{ marginRight: 6 }}>{countryMeta?.flag || '🌐'}</span>
+                                                    <span>{fp.city || fp.country}</span>
+                                                    <span style={{ marginLeft: 5, fontSize: 9.5, color: '#6ee7b7', fontWeight: 700 }}>
+                                                      ({fp.countryCode})
+                                                    </span>
+                                                  </td>
+
+                                                  <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 700, color: isCurrent ? '#34d399' : '#e2e8f0' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                      <span>{fp.ip}:{fp.port}</span>
+                                                      <button
+                                                        type="button"
+                                                        onClick={(e) => handleCopyProxyIp(e, `${fp.ip}:${fp.port}`)}
+                                                        style={{
+                                                          background: 'none',
+                                                          border: 'none',
+                                                          color: isCopied ? '#34d399' : '#64748b',
+                                                          cursor: 'pointer',
+                                                          padding: 0,
+                                                        }}
+                                                        title="Copy IP:Port"
+                                                      >
+                                                        {isCopied ? <Check size={11} color="#34d399" /> : <Copy size={11} />}
+                                                      </button>
+                                                    </div>
+                                                  </td>
+
+                                                  <td style={{ padding: '8px 12px' }}>
+                                                    <span
+                                                      style={{
+                                                        fontSize: 9.5,
+                                                        padding: '2px 6px',
+                                                        borderRadius: 4,
+                                                        backgroundColor: fp.protocol.toLowerCase().includes('socks') ? 'rgba(59, 130, 246, 0.2)' : 'rgba(168, 85, 247, 0.2)',
+                                                        color: fp.protocol.toLowerCase().includes('socks') ? '#60a5fa' : '#c084fc',
+                                                        fontWeight: 700,
+                                                        textTransform: 'uppercase',
+                                                      }}
+                                                    >
+                                                      {fp.protocol}
+                                                    </span>
+                                                  </td>
+
+                                                  <td style={{ padding: '8px 12px' }}>
+                                                    {isTestingThis ? (
+                                                      <span style={{ color: '#38bdf8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                        <Loader2 size={11} className="animate-spin" /> Testing...
+                                                      </span>
+                                                    ) : test ? (
+                                                      test.success ? (
+                                                        <span style={{ color: '#34d399', fontWeight: 700 }}>
+                                                          ⚡ {test.latencyMs}ms ({test.speedRating})
+                                                        </span>
+                                                      ) : (
+                                                        <span style={{ color: '#ef4444', fontWeight: 700 }}>
+                                                          ✗ Failed
+                                                        </span>
+                                                      )
+                                                    ) : fp.speed ? (
+                                                      <span style={{ color: '#6ee7b7', fontWeight: 700 }}>
+                                                        ⚡ {fp.speed}
+                                                      </span>
+                                                    ) : (
+                                                      <span style={{ color: '#64748b' }}>
+                                                        ⚡ Untested
+                                                      </span>
+                                                    )}
+                                                  </td>
+
+                                                  <td style={{ padding: '8px 12px' }}>
+                                                    {test ? (
+                                                      test.success ? (
+                                                        <span style={{ padding: '1px 5px', borderRadius: 3, backgroundColor: 'rgba(5, 150, 105, 0.25)', color: '#6ee7b7', fontSize: 10, fontWeight: 700 }}>
+                                                          100% Up
+                                                        </span>
+                                                      ) : (
+                                                        <span style={{ padding: '1px 5px', borderRadius: 3, backgroundColor: 'rgba(239, 68, 68, 0.2)', color: '#f87171', fontSize: 10, fontWeight: 700 }}>
+                                                          0% Up
+                                                        </span>
+                                                      )
+                                                    ) : fp.uptime ? (
+                                                      <span style={{ padding: '1px 5px', borderRadius: 3, backgroundColor: 'rgba(5, 150, 105, 0.25)', color: '#6ee7b7', fontSize: 10, fontWeight: 700 }}>
+                                                        {fp.uptime}
+                                                      </span>
+                                                    ) : (
+                                                      <span style={{ color: '#64748b', fontSize: 10 }}>—</span>
+                                                    )}
+                                                  </td>
+
+                                                  <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                                                    <button
+                                                      type="button"
+                                                      onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleTestAndApplyProxy(fp);
+                                                      }}
+                                                      disabled={isTestingThis}
+                                                      style={{
+                                                        padding: '4px 10px',
+                                                        borderRadius: 5,
+                                                        fontSize: 10.5,
+                                                        fontWeight: 700,
+                                                        backgroundColor: isCurrent ? '#059669' : '#1e293b',
+                                                        border: isCurrent ? '1px solid #34d399' : '1px solid #334155',
+                                                        color: isCurrent ? '#ffffff' : '#38bdf8',
+                                                        cursor: 'pointer',
+                                                      }}
+                                                    >
+                                                      {isTestingThis ? 'Testing...' : isCurrent ? '✓ Active' : 'Connect'}
+                                                    </button>
+                                                  </td>
+                                                </tr>
+                                              );
+                                            })}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    )
                                   ) : (
-                                    <div style={{ padding: '16px 12px', textAlign: 'center', color: '#64748b', fontSize: 12 }}>
+                                    <div style={{ padding: '24px 16px', textAlign: 'center', color: '#64748b', fontSize: 12.5, backgroundColor: '#0c1412', borderRadius: 8, border: '1px dashed #134e3f' }}>
                                       No connectable proxies found for this filter. Try selecting 'All Countries' or click 'Scan Live Proxies'.
                                     </div>
                                   )}
@@ -5977,6 +6317,550 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Software Updates Modal Popup */}
+      {showUpdateModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.75)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000000,
+            backdropFilter: 'blur(6px)',
+            WebkitBackdropFilter: 'blur(6px)',
+          }}
+          onClick={() => setShowUpdateModal(false)}
+        >
+          <div
+            style={{
+              backgroundColor: '#161822',
+              borderRadius: 14,
+              width: 500,
+              maxWidth: '92vw',
+              border: '1px solid #2d3246',
+              boxShadow: '0 24px 60px rgba(0, 0, 0, 0.7)',
+              overflow: 'hidden',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div
+              style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid #25293a',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                background: 'linear-gradient(180deg, #1b1e2c 0%, #161822 100%)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: 9,
+                    backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                    border: '1px solid rgba(59, 130, 246, 0.25)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#60a5fa',
+                  }}
+                >
+                  <RefreshCw size={17} className={checkingUpdate ? 'animate-spin' : ''} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 15.5, fontWeight: 700, color: '#ffffff' }}>
+                    Software Updates
+                  </h3>
+                  <p style={{ margin: '2px 0 0', fontSize: 11.5, color: '#8b92a2' }}>
+                    Multi Agent Browser • Current v2.0.0
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowUpdateModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#8b92a2',
+                  cursor: 'pointer',
+                  padding: 4,
+                  display: 'flex',
+                  alignItems: 'center',
+                  borderRadius: 6,
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '22px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {checkingUpdate ? (
+                <div
+                  style={{
+                    padding: '24px 16px',
+                    textAlign: 'center',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 12,
+                  }}
+                >
+                  <Loader2 size={32} color="#3b82f6" className="animate-spin" />
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: '#ffffff' }}>
+                      Checking for updates…
+                    </h4>
+                    <p style={{ margin: '4px 0 0', fontSize: 12.5, color: '#8b92a2' }}>
+                      Connecting to server to check for the latest release…
+                    </p>
+                  </div>
+                </div>
+              ) : updateStatus.status === 'available' ? (
+                <div
+                  style={{
+                    padding: 16,
+                    borderRadius: 12,
+                    backgroundColor: 'rgba(16, 185, 129, 0.08)',
+                    border: '1px solid rgba(16, 185, 129, 0.25)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 14,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                    <div style={{ padding: 8, borderRadius: 8, backgroundColor: 'rgba(16, 185, 129, 0.16)', color: '#34d399' }}>
+                      <ArrowDownCircle size={22} />
+                    </div>
+                    <div>
+                      <h4 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: '#34d399' }}>
+                        New Version Available (v{updateStatus.version})
+                      </h4>
+                      <p style={{ margin: '4px 0 0', fontSize: 12.5, color: '#cbd5e1', lineHeight: 1.45 }}>
+                        An update is available with enhanced anti-detect fingerprints and improved proxy stability.
+                      </p>
+                    </div>
+                  </div>
+
+                  {updateStatus.releaseNotes && (
+                    <div
+                      style={{
+                        padding: 10,
+                        borderRadius: 8,
+                        backgroundColor: '#0f1118',
+                        fontSize: 11.5,
+                        color: '#94a3b8',
+                        maxHeight: 90,
+                        overflowY: 'auto',
+                      }}
+                    >
+                      {updateStatus.releaseNotes}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleDownloadUpdate}
+                    style={{
+                      padding: '9px 18px',
+                      backgroundColor: '#10b981',
+                      border: 'none',
+                      borderRadius: 8,
+                      color: '#ffffff',
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                      boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
+                    }}
+                  >
+                    <ArrowDownCircle size={16} />
+                    Download Update Now
+                  </button>
+                </div>
+              ) : updateStatus.status === 'downloading' ? (
+                <div
+                  style={{
+                    padding: 16,
+                    borderRadius: 12,
+                    backgroundColor: 'rgba(59, 130, 246, 0.08)',
+                    border: '1px solid rgba(59, 130, 246, 0.25)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 12,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <Loader2 size={18} color="#60a5fa" className="animate-spin" />
+                      <span style={{ fontSize: 14, fontWeight: 600, color: '#ffffff' }}>
+                        Downloading update…
+                      </span>
+                    </div>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#60a5fa' }}>
+                      {updateStatus.percent || 0}%
+                    </span>
+                  </div>
+                  <div style={{ height: 8, borderRadius: 9999, backgroundColor: '#0f1118', overflow: 'hidden' }}>
+                    <div
+                      style={{
+                        width: `${Math.min(100, Math.max(0, updateStatus.percent || 0))}%`,
+                        height: '100%',
+                        borderRadius: 9999,
+                        backgroundColor: '#3b82f6',
+                        boxShadow: '0 0 10px rgba(59, 130, 246, 0.6)',
+                        transition: 'width 0.3s ease',
+                      }}
+                    />
+                  </div>
+                  <p style={{ margin: 0, fontSize: 12, color: '#94a3b8' }}>
+                    Please keep Multi Agent open while downloading.
+                  </p>
+                </div>
+              ) : updateStatus.status === 'downloaded' ? (
+                <div
+                  style={{
+                    padding: 16,
+                    borderRadius: 12,
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 14,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                    <div style={{ padding: 8, borderRadius: 8, backgroundColor: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa' }}>
+                      <CheckCircle size={22} />
+                    </div>
+                    <div>
+                      <h4 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: '#60a5fa' }}>
+                        Update Ready to Install!
+                      </h4>
+                      <p style={{ margin: '4px 0 0', fontSize: 12.5, color: '#cbd5e1', lineHeight: 1.45 }}>
+                        Update v{updateStatus.version} is completely downloaded. Restart Multi Agent now to apply the upgrade.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleInstallUpdate}
+                    style={{
+                      padding: '9px 18px',
+                      backgroundColor: '#3b82f6',
+                      border: 'none',
+                      borderRadius: 8,
+                      color: '#ffffff',
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                      boxShadow: '0 4px 14px rgba(59, 130, 246, 0.35)',
+                    }}
+                  >
+                    <CheckCircle size={16} />
+                    Restart & Install Update
+                  </button>
+                </div>
+              ) : updateStatus.status === 'not-available' ? (
+                <div
+                  style={{
+                    padding: 16,
+                    borderRadius: 12,
+                    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 14,
+                  }}
+                >
+                  <div style={{ padding: 10, borderRadius: 10, backgroundColor: 'rgba(16, 185, 129, 0.12)', color: '#34d399', flexShrink: 0 }}>
+                    <CheckCircle size={22} />
+                  </div>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: 14.5, fontWeight: 600, color: '#ffffff' }}>
+                      You are up to date!
+                    </h4>
+                    <p style={{ margin: '3px 0 0', fontSize: 12, color: '#8b92a2', lineHeight: 1.4 }}>
+                      Multi Agent v2.0.0 is the latest available version.
+                    </p>
+                  </div>
+                </div>
+              ) : updateStatus.status === 'error' ? (
+                <div
+                  style={{
+                    padding: 16,
+                    borderRadius: 12,
+                    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                    border: '1px solid rgba(239, 68, 68, 0.25)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 12,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                    <div style={{ padding: 8, borderRadius: 8, backgroundColor: 'rgba(239, 68, 68, 0.15)', color: '#f87171' }}>
+                      <AlertCircle size={20} />
+                    </div>
+                    <div>
+                      <h4 style={{ margin: 0, fontSize: 14.5, fontWeight: 600, color: '#f87171' }}>
+                        Update Check Notice
+                      </h4>
+                      <p style={{ margin: '4px 0 0', fontSize: 12, color: '#fca5a5', lineHeight: 1.45 }}>
+                        {updateStatus.message || 'Could not connect to update servers.'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  style={{
+                    padding: 16,
+                    borderRadius: 12,
+                    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 14,
+                  }}
+                >
+                  <div style={{ padding: 10, borderRadius: 10, backgroundColor: 'rgba(59, 130, 246, 0.1)', color: '#60a5fa', flexShrink: 0 }}>
+                    <Sparkles size={20} />
+                  </div>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: 14.5, fontWeight: 600, color: '#ffffff' }}>
+                      Check for Software Updates
+                    </h4>
+                    <p style={{ margin: '3px 0 0', fontSize: 12, color: '#8b92a2' }}>
+                      Ensure you have the latest security patches and anti-fingerprint profiles.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div
+              style={{
+                padding: '12px 20px',
+                borderTop: '1px solid #232738',
+                backgroundColor: '#12141c',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <button
+                type="button"
+                onClick={handleCheckUpdate}
+                disabled={checkingUpdate || updateStatus.status === 'downloading'}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '6px 14px',
+                  backgroundColor: '#1c1f2c',
+                  border: '1px solid #2c3246',
+                  borderRadius: 6,
+                  color: checkingUpdate ? '#6b7280' : '#cbd5e1',
+                  fontSize: 12,
+                  fontWeight: 500,
+                  cursor: checkingUpdate ? 'not-allowed' : 'pointer',
+                }}
+              >
+                <RefreshCw size={13} className={checkingUpdate ? 'animate-spin' : ''} />
+                {checkingUpdate ? 'Checking…' : 'Check Again'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowUpdateModal(false)}
+                style={{
+                  padding: '6px 16px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                  border: 'none',
+                  borderRadius: 6,
+                  color: '#ffffff',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Live Proxy Connection Test Toast Notification */}
+      {typeof document !== 'undefined' && proxyToast && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 28,
+            right: 28,
+            zIndex: 99999999,
+            minWidth: 330,
+            maxWidth: 420,
+            backgroundColor: proxyToast.type === 'testing'
+              ? 'rgba(11, 19, 32, 0.95)'
+              : proxyToast.type === 'success'
+              ? 'rgba(4, 29, 21, 0.96)'
+              : 'rgba(32, 12, 15, 0.96)',
+            border: `1.5px solid ${
+              proxyToast.type === 'testing'
+                ? '#38bdf8'
+                : proxyToast.type === 'success'
+                ? '#10b981'
+                : '#ef4444'
+            }`,
+            borderRadius: 12,
+            boxShadow: `0 20px 40px -6px ${
+              proxyToast.type === 'testing'
+                ? 'rgba(56, 189, 248, 0.35)'
+                : proxyToast.type === 'success'
+                ? 'rgba(16, 185, 129, 0.4)'
+                : 'rgba(239, 68, 68, 0.4)'
+            }`,
+            padding: '13px 16px',
+            color: '#f8fafc',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 9,
+            backdropFilter: 'blur(16px)',
+            transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+          }}
+        >
+          {/* Header row: Status Icon + Title + Close Button */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+              {proxyToast.type === 'testing' ? (
+                <Loader2 size={18} className="animate-spin" color="#38bdf8" />
+              ) : proxyToast.type === 'success' ? (
+                <CheckCircle2 size={18} color="#34d399" />
+              ) : (
+                <AlertCircle size={18} color="#f87171" />
+              )}
+              <span
+                style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: proxyToast.type === 'testing'
+                    ? '#38bdf8'
+                    : proxyToast.type === 'success'
+                    ? '#34d399'
+                    : '#f87171',
+                }}
+              >
+                {proxyToast.title}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setProxyToast(null)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#94a3b8',
+                cursor: 'pointer',
+                padding: 3,
+                borderRadius: 4,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+              title="Dismiss"
+            >
+              <X size={14} />
+            </button>
+          </div>
+
+          {/* Proxy IP & Details Box */}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 5,
+              backgroundColor: 'rgba(0, 0, 0, 0.35)',
+              borderRadius: 8,
+              padding: '8px 10px',
+              border: '1px solid rgba(255, 255, 255, 0.07)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                <span style={{ fontSize: 13 }}>{proxyToast.countryFlag || '🌐'}</span>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: '#f1f5f9', fontFamily: 'monospace' }}>
+                  {proxyToast.host}:{proxyToast.port}
+                </span>
+              </div>
+              {proxyToast.protocol && (
+                <span
+                  style={{
+                    fontSize: 9.5,
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                    backgroundColor: proxyToast.type === 'success' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.1)',
+                    color: proxyToast.type === 'success' ? '#6ee7b7' : '#94a3b8',
+                  }}
+                >
+                  {proxyToast.protocol}
+                </span>
+              )}
+            </div>
+
+            {proxyToast.type === 'testing' && (
+              <div style={{ fontSize: 11, color: '#93c5fd', marginTop: 2, display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span>Testing socket handshake, ping & live exit IP...</span>
+              </div>
+            )}
+
+            {proxyToast.type === 'success' && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 3, fontSize: 11.5 }}>
+                {proxyToast.latencyMs !== undefined && (
+                  <span style={{ color: '#34d399', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                    ⚡ {proxyToast.latencyMs}ms {proxyToast.speedRating ? `(${proxyToast.speedRating})` : ''}
+                  </span>
+                )}
+                {proxyToast.exitIp && (
+                  <span style={{ color: '#cbd5e1' }}>
+                    Exit IP: <strong style={{ color: '#f1f5f9' }}>{proxyToast.exitIp}</strong>
+                  </span>
+                )}
+                {proxyToast.location && (
+                  <span style={{ color: '#a7f3d0' }}>
+                    📍 {proxyToast.location}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {proxyToast.type === 'error' && (
+              <div style={{ fontSize: 11, color: '#fca5a5', marginTop: 2 }}>
+                {proxyToast.error || 'Connection timed out or host unreachable'}
+              </div>
+            )}
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
