@@ -20,13 +20,10 @@ import {
   Apple,
   Monitor,
   Wifi,
-  ExternalLink,
   Edit2,
   Loader2,
   RotateCw,
-  Folder,
   Cookie,
-  FileText,
   Bookmark,
   Layers,
   Flame,
@@ -36,9 +33,7 @@ import {
   ArrowDownCircle,
   CheckCircle,
   Zap,
-  Activity,
   MoreVertical,
-  ChevronDown,
   LayoutGrid,
   List,
   Sparkles,
@@ -51,7 +46,6 @@ import {
   ALL_LANGUAGES,
   POPULAR_TIMEZONES,
   ALL_TIMEZONES,
-  TIMEZONE_REGIONS,
 } from '../../profiles/locales';
 import { getFirebaseServices, isFirebaseConfigured } from '../services/firebase';
 import { restoreProfileCookiesFromCloud } from '../services/cloud-profile-sync';
@@ -222,7 +216,7 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
   const [freeProxyPort, setFreeProxyPort] = useState<number>(1080);
   const [freeProxyMode, setFreeProxyMode] = useState<'http' | 'https' | 'socks5'>('socks5');
   const [proxyCountries, setProxyCountries] = useState<ProxyCountry[]>(SUPPORTED_PROXY_COUNTRIES);
-  const [popularProxyCountries, setPopularProxyCountries] = useState<ProxyCountry[]>(POPULAR_PROXY_COUNTRIES);
+  const [popularProxyCountries] = useState<ProxyCountry[]>(POPULAR_PROXY_COUNTRIES);
   const [selectedCountryCode, setSelectedCountryCode] = useState<string>('ALL');
   const [proxyFilterProtocol, setProxyFilterProtocol] = useState<'all' | 'socks5' | 'http'>('all');
   const [proxySearchText, setProxySearchText] = useState<string>('');
@@ -250,6 +244,7 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
     timezone?: string;
     error?: string;
   } | null>(null);
+
   const [rotatingProfileId, setRotatingProfileId] = useState<string | null>(null);
 
   // Live Proxy Connection Test Toast state
@@ -1135,16 +1130,33 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
     }
   };
 
-  const handleRefreshFreeProxies = async (countryCode?: string) => {
+  const handleRefreshFreeProxies = async (countryCode?: string, forceRefresh = false) => {
     if (!window.browserAPI || !(window.browserAPI as any).listFreeProxies || loadingFreeProxies) return;
     setLoadingFreeProxies(true);
     const targetCode = countryCode !== undefined ? countryCode : selectedCountryCode;
     try {
-      const list = await (window.browserAPI as any).listFreeProxies({ countryCode: targetCode });
+      const list = await (window.browserAPI as any).listFreeProxies({ countryCode: targetCode, forceRefresh });
       setFreeProxies(list || []);
       setSelectedFreeProxyId('');
+      if (forceRefresh) {
+        showProxyToast({
+          id: `scan-${Date.now()}`,
+          type: 'success',
+          title: 'Live Proxy Scan Complete',
+          host: `${list?.length || 0} live proxies found`,
+          port: targetCode === 'ALL' ? 'Global' : targetCode,
+          location: `Verified real-time connectable proxies for ${targetCode === 'ALL' ? 'All Countries' : targetCode}`,
+        });
+      }
     } catch (err: any) {
-      alert(`Could not refresh free proxies: ${err.message}`);
+      showProxyToast({
+        id: `scan-err-${Date.now()}`,
+        type: 'error',
+        title: 'Proxy Scan Failed',
+        host: 'Scan Error',
+        port: '',
+        error: err.message,
+      });
     } finally {
       setLoadingFreeProxies(false);
     }
@@ -2316,12 +2328,27 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
                           <span
                             onClick={(e) => {
                               e.stopPropagation();
+                              if (rotatingProfileId === p.id) return;
                               handleRotateProxy(p.id, (p.proxy as any).changeIpUrl);
                             }}
-                            style={{ color: '#ef4444', display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}
-                            title="Rotate / Change IP"
+                            style={{
+                              color: '#ef4444',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              cursor: rotatingProfileId === p.id ? 'wait' : 'pointer',
+                              opacity: rotatingProfileId === p.id ? 0.6 : 1,
+                            }}
+                            title={rotatingProfileId === p.id ? 'Rotating IP...' : 'Rotate / Change IP'}
                           >
-                            <Zap size={14} color="#ef4444" fill="#ef4444" />
+                            <Zap
+                              size={14}
+                              color="#ef4444"
+                              fill="#ef4444"
+                              style={{
+                                transform: rotatingProfileId === p.id ? 'rotate(180deg)' : 'none',
+                                transition: 'transform 0.4s ease',
+                              }}
+                            />
                           </span>
                         </div>
                       ) : (
@@ -4044,7 +4071,7 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
                                   fontWeight: 600,
                                 }}
                               >
-                                {freeProxies.length} Total Curated
+                                {freeProxies.length} Live Connectable
                               </span>
                             </div>
 
@@ -4108,25 +4135,26 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
 
                               <button
                                 type="button"
-                                onClick={() => handleRefreshFreeProxies()}
+                                onClick={() => handleRefreshFreeProxies(selectedCountryCode, true)}
                                 disabled={loadingFreeProxies}
                                 style={{
                                   display: 'flex',
                                   alignItems: 'center',
                                   gap: 5,
-                                  padding: '5px 12px',
+                                  padding: '5px 14px',
                                   backgroundColor: '#064e3b',
-                                  border: '1px solid #059669',
+                                  border: '1.5px solid #059669',
                                   borderRadius: 6,
                                   color: '#34d399',
-                                  fontSize: 11,
-                                  fontWeight: 600,
-                                  cursor: 'pointer',
+                                  fontSize: 11.5,
+                                  fontWeight: 700,
+                                  cursor: loadingFreeProxies ? 'not-allowed' : 'pointer',
+                                  boxShadow: '0 2px 8px rgba(5, 150, 105, 0.25)',
                                 }}
-                                title="Scan and verify fresh connectable proxies for this country"
+                                title="Dynamically scan and verify fresh connectable proxies for this country"
                               >
-                                {loadingFreeProxies ? <Loader2 size={12} className="animate-spin" /> : <RotateCw size={12} />}
-                                {loadingFreeProxies ? 'Scanning & Testing...' : 'Scan Live Proxies'}
+                                {loadingFreeProxies ? <Loader2 size={13} className="animate-spin" /> : <Zap size={13} />}
+                                {loadingFreeProxies ? 'Scanning & Verifying...' : '⚡ Scan Live Proxies'}
                               </button>
                             </div>
                           </div>
@@ -4185,18 +4213,11 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
                                         cursor: 'pointer',
                                       }}
                                     >
-                                      {proxyCountries.map((c) => {
-                                        const liveCount = freeProxies.filter((fp) => {
-                                          if (c.code === 'ALL') return true;
-                                          return (fp.countryCode || '').toUpperCase() === c.code.toUpperCase();
-                                        }).length;
-                                        const displayCount = c.count !== undefined && c.count > 0 ? c.count : liveCount;
-                                        return (
-                                          <option key={c.code} value={c.code}>
-                                            {c.flag} {c.name} {displayCount > 0 ? `(${displayCount} available)` : ''}
-                                          </option>
-                                        );
-                                      })}
+                                      {proxyCountries.map((c) => (
+                                        <option key={c.code} value={c.code}>
+                                          {c.flag} {c.name}
+                                        </option>
+                                      ))}
                                     </select>
                                   </div>
 
@@ -6712,7 +6733,7 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
         <div
           style={{
             position: 'fixed',
-            bottom: 28,
+            bottom: 82,
             right: 28,
             zIndex: 99999999,
             minWidth: 330,

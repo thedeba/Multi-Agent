@@ -252,9 +252,9 @@ function registerIpcHandlers() {
     return SavedProxyStorage.delete(id);
   });
 
-  ipcMain.handle(IPC_CHANNELS.PROXY_LIST_FREE, async (_event, args?: { countryCode?: string }) => {
+  ipcMain.handle(IPC_CHANNELS.PROXY_LIST_FREE, async (_event, args?: { countryCode?: string; forceRefresh?: boolean }) => {
     const { FreeProxyService } = await import('../network/proxy/free-proxy-service');
-    return FreeProxyService.fetchFreeProxies(args?.countryCode);
+    return FreeProxyService.fetchFreeProxies(args?.countryCode, args?.forceRefresh);
   });
 
   ipcMain.handle(IPC_CHANNELS.PROXY_GET_COUNTRIES, async () => {
