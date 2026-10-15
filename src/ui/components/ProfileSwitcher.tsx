@@ -2023,8 +2023,8 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
                 </th>
                 <th style={{ padding: '12px 16px', fontWeight: 500 }}>Name</th>
                 <th style={{ padding: '12px 16px', fontWeight: 500 }}>Proxy</th>
-                <th style={{ padding: '12px 16px', fontWeight: 500 }}>Group</th>
-                <th style={{ padding: '12px 16px', fontWeight: 500 }}>Tags</th>
+                <th style={{ padding: '12px 16px', fontWeight: 500 }}>Language</th>
+                <th style={{ padding: '12px 16px', fontWeight: 500 }}>WebRTC Status</th>
                 <th style={{ padding: '12px 16px', fontWeight: 500 }}>Status</th>
                 <th style={{ padding: '12px 16px', fontWeight: 500 }}>Browser v...</th>
                 <th className="col-actions-header" style={{ padding: '12px 20px', textAlign: 'right' }}>
@@ -2114,6 +2114,7 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
                       {hasProxy ? (
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                           <span
+                            onClick={() => handleOpenEdit(p, 'proxy')}
                             style={{
                               color: '#cbd5e1',
                               fontSize: 13,
@@ -2121,16 +2122,27 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
                               overflow: 'hidden',
                               textOverflow: 'ellipsis',
                               whiteSpace: 'nowrap',
+                              cursor: 'pointer',
+                              transition: 'color 0.15s ease',
                             }}
-                            title={`${p.proxy.host}:${p.proxy.port}`}
+                            title="Click to configure proxy"
+                            onMouseEnter={(e) => { e.currentTarget.style.color = '#60a5fa'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.color = '#cbd5e1'; }}
                           >
                             {p.proxy.host.length > 18 ? `${p.proxy.host.slice(0, 16)}...` : p.proxy.host}
                           </span>
-                          <span style={{ color: '#10b981', display: 'inline-flex', alignItems: 'center' }} title="Proxy Enabled">
+                          <span
+                            onClick={() => handleOpenEdit(p, 'proxy')}
+                            style={{ color: '#10b981', display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}
+                            title="Proxy Enabled - Click to configure"
+                          >
                             <Check size={14} color="#10b981" strokeWidth={2.5} />
                           </span>
                           <span
-                            onClick={() => handleRotateProxy(p.id, (p.proxy as any).changeIpUrl)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRotateProxy(p.id, (p.proxy as any).changeIpUrl);
+                            }}
                             style={{ color: '#ef4444', display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}
                             title="Rotate / Change IP"
                           >
@@ -2140,64 +2152,148 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
                       ) : (
                         <span
                           onClick={() => handleOpenEdit(p, 'proxy')}
-                          style={{ color: '#64748b', fontSize: 13, cursor: 'pointer' }}
+                          style={{ color: '#64748b', fontSize: 13, cursor: 'pointer', transition: 'color 0.15s ease' }}
                           title="Click to configure proxy"
+                          onMouseEnter={(e) => { e.currentTarget.style.color = '#3b82f6'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.color = '#64748b'; }}
                         >
                           Add a proxy
                         </span>
                       )}
                     </td>
 
-                    {/* Group */}
+                    {/* Language */}
                     <td style={{ padding: '12px 16px' }}>
-                      {(p as any).group && (p as any).group !== 'Default' ? (
-                        <span style={{ color: '#cbd5e1', fontSize: 13 }}>{(p as any).group}</span>
-                      ) : (
+                      <div
+                        onClick={() => handleOpenEdit(p, 'general')}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
+                        title="Click to configure language and environment"
+                      >
+                        <Globe size={13} color="#94a3b8" />
                         <span
-                          onClick={() => handleOpenEdit(p, 'general')}
-                          style={{ color: '#64748b', fontSize: 13, cursor: 'pointer' }}
-                          title="Click to assign group"
+                          style={{
+                            color: '#e2e8f0',
+                            fontSize: 12,
+                            fontWeight: 500,
+                            backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                            padding: '2px 8px',
+                            borderRadius: 6,
+                            border: '1px solid rgba(255, 255, 255, 0.08)',
+                            transition: 'all 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.15)';
+                            e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.35)';
+                            e.currentTarget.style.color = '#93c5fd';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+                            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
+                            e.currentTarget.style.color = '#e2e8f0';
+                          }}
                         >
-                          Add a group
+                          {p.language || 'en-US'}
                         </span>
-                      )}
+                      </div>
                     </td>
 
-                    {/* Tags */}
+                    {/* WebRTC Status */}
                     <td style={{ padding: '12px 16px' }}>
-                      {Array.isArray((p as any).tags) && (p as any).tags.length > 0 ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-                          {(p as any).tags.map((t: string) => (
+                      {(() => {
+                        const policy = p.webrtcPolicy || 'default_public_interface_only';
+                        const isDisabled = policy === 'disabled';
+                        const isProxyOnly = policy === 'disable_non_proxied_udp';
+                        const isPublicOnly = policy === 'default_public_interface_only';
+
+                        const label = isDisabled
+                          ? 'Disabled'
+                          : isProxyOnly
+                          ? 'Proxy Only'
+                          : isPublicOnly
+                          ? 'Public IP Only'
+                          : 'Real IP';
+
+                        const color = isDisabled
+                          ? '#f87171'
+                          : isProxyOnly
+                          ? '#fbbf24'
+                          : isPublicOnly
+                          ? '#34d399'
+                          : '#60a5fa';
+
+                        const bg = isDisabled
+                          ? 'rgba(239, 68, 68, 0.12)'
+                          : isProxyOnly
+                          ? 'rgba(245, 158, 11, 0.12)'
+                          : isPublicOnly
+                          ? 'rgba(16, 185, 129, 0.12)'
+                          : 'rgba(59, 130, 246, 0.12)';
+
+                        const border = isDisabled
+                          ? 'rgba(239, 68, 68, 0.28)'
+                          : isProxyOnly
+                          ? 'rgba(245, 158, 11, 0.28)'
+                          : isPublicOnly
+                          ? 'rgba(16, 185, 129, 0.28)'
+                          : 'rgba(59, 130, 246, 0.28)';
+
+                        const dotColor = isDisabled
+                          ? '#ef4444'
+                          : isProxyOnly
+                          ? '#f59e0b'
+                          : isPublicOnly
+                          ? '#10b981'
+                          : '#3b82f6';
+
+                        return (
+                          <div
+                            onClick={() => handleOpenEdit(p, 'privacy')}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              padding: '2px 8px',
+                              borderRadius: 6,
+                              backgroundColor: bg,
+                              border: `1px solid ${border}`,
+                              color: color,
+                              fontSize: 11,
+                              fontWeight: 600,
+                              letterSpacing: '0.02em',
+                              cursor: 'pointer',
+                              transition: 'all 0.15s ease',
+                            }}
+                            title={`WebRTC Policy: ${policy} - Click to configure WebRTC & Privacy`}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.filter = 'brightness(1.2)';
+                              e.currentTarget.style.boxShadow = `0 0 8px ${bg}`;
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.filter = 'none';
+                              e.currentTarget.style.boxShadow = 'none';
+                            }}
+                          >
                             <span
-                              key={t}
                               style={{
-                                backgroundColor: '#15803d',
-                                color: '#ffffff',
-                                padding: '2px 8px',
-                                borderRadius: 4,
-                                fontSize: 11,
-                                fontWeight: 700,
-                                letterSpacing: '0.02em',
+                                width: 6,
+                                height: 6,
+                                borderRadius: '50%',
+                                backgroundColor: dotColor,
                               }}
-                            >
-                              {t}
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <span
-                          onClick={() => handleOpenEdit(p, 'general')}
-                          style={{ color: '#64748b', fontSize: 13, cursor: 'pointer' }}
-                          title="Click to add tag"
-                        >
-                          Add a tag
-                        </span>
-                      )}
+                            />
+                            <span>{label}</span>
+                          </div>
+                        );
+                      })()}
                     </td>
 
                     {/* Status */}
                     <td style={{ padding: '12px 16px' }}>
-                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                      <div
+                        onClick={() => handleOpenEdit(p, 'general')}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 7, cursor: 'pointer' }}
+                        title="Click to view profile settings"
+                      >
                         <span
                           style={{
                             width: 7,
@@ -2216,7 +2312,19 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
 
                     {/* Browser v... */}
                     <td style={{ padding: '12px 16px' }}>
-                      <span style={{ color: '#94a3b8', fontSize: 13, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}>
+                      <span
+                        onClick={() => handleOpenEdit(p, 'general')}
+                        style={{
+                          color: '#94a3b8',
+                          fontSize: 13,
+                          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                          cursor: 'pointer',
+                          transition: 'color 0.15s ease',
+                        }}
+                        title="Click to configure browser engine, version, or user-agent"
+                        onMouseEnter={(e) => { e.currentTarget.style.color = '#38bdf8'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.color = '#94a3b8'; }}
+                      >
                         {((p as any).browserVersion || '152.0.0.0').split('.')[0]}
                       </span>
                     </td>
