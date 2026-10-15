@@ -2030,115 +2030,6 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
           </div>
         </div>
 
-        {/* Bulk Actions Banner */}
-        {selectedProfileIds.length > 0 && (
-          <div
-            style={{
-              padding: '12px 28px',
-              backgroundColor: 'rgba(30, 41, 59, 0.85)',
-              backdropFilter: 'blur(10px)',
-              borderBottom: '1px solid rgba(59, 130, 246, 0.3)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              animation: 'fadeIn 0.2s ease',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div
-                style={{
-                  padding: '3px 10px',
-                  borderRadius: 20,
-                  backgroundColor: 'rgba(59, 130, 246, 0.2)',
-                  border: '1px solid rgba(59, 130, 246, 0.4)',
-                  color: '#93c5fd',
-                  fontSize: 12,
-                  fontWeight: 600,
-                }}
-              >
-                {selectedProfileIds.length} profiles selected
-              </div>
-              <button
-                onClick={() => setSelectedProfileIds([])}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: '#94a3b8',
-                  fontSize: 11,
-                  cursor: 'pointer',
-                  textDecoration: 'underline',
-                }}
-              >
-                Deselect all
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <button
-                onClick={handleBulkLaunch}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '7px 14px',
-                  backgroundColor: '#10b981',
-                  border: 'none',
-                  borderRadius: 7,
-                  color: '#fff',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 10px rgba(16, 185, 129, 0.3)',
-                }}
-              >
-                <Play size={12} fill="#fff" />
-                Launch Selected
-              </button>
-
-              <button
-                onClick={handleBulkStop}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '7px 14px',
-                  backgroundColor: '#f59e0b',
-                  border: 'none',
-                  borderRadius: 7,
-                  color: '#fff',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 10px rgba(245, 158, 11, 0.25)',
-                }}
-              >
-                <Square size={12} fill="#fff" />
-                Stop Selected
-              </button>
-
-              <button
-                onClick={handleBulkDelete}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '7px 14px',
-                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                  border: '1px solid rgba(239, 68, 68, 0.4)',
-                  borderRadius: 7,
-                  color: '#f87171',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                <Trash2 size={12} />
-                Delete Selected
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Import JSON drawer */}
         {showImport && (
           <div style={{ padding: '12px 24px', backgroundColor: '#1d202d', borderBottom: '1px solid #2f3448' }}>
@@ -2702,6 +2593,139 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
             </tbody>
           </table>
         </div>
+
+        {/* Floating Bottom Bulk Actions Bar */}
+        {selectedProfileIds.length > 0 && (
+          <div
+            style={{
+              position: 'fixed',
+              bottom: 24,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 9999,
+              backgroundColor: '#161926',
+              border: '1.5px solid rgba(59, 130, 246, 0.45)',
+              borderRadius: 14,
+              boxShadow: '0 20px 45px -10px rgba(0, 0, 0, 0.85), 0 0 25px rgba(59, 130, 246, 0.25)',
+              backdropFilter: 'blur(16px)',
+              padding: '10px 18px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 16,
+              maxWidth: '92vw',
+              animation: 'fadeIn 0.2s ease',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div
+                style={{
+                  padding: '4px 12px',
+                  borderRadius: 20,
+                  backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                  border: '1px solid rgba(59, 130, 246, 0.4)',
+                  color: '#93c5fd',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {selectedProfileIds.length} {selectedProfileIds.length === 1 ? 'profile' : 'profiles'} selected
+              </div>
+              <button
+                onClick={() => setSelectedProfileIds([])}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#94a3b8',
+                  fontSize: 11.5,
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Deselect all
+              </button>
+            </div>
+
+            <div style={{ width: 1, height: 22, backgroundColor: '#2e354b' }} />
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <button
+                onClick={handleBulkLaunch}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '7px 15px',
+                  backgroundColor: '#10b981',
+                  border: 'none',
+                  borderRadius: 8,
+                  color: '#fff',
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 10px rgba(16, 185, 129, 0.3)',
+                  whiteSpace: 'nowrap',
+                  transition: 'opacity 0.15s ease',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.9'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
+              >
+                <Play size={12} fill="#fff" />
+                Launch Selected
+              </button>
+
+              <button
+                onClick={handleBulkStop}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '7px 15px',
+                  backgroundColor: '#f59e0b',
+                  border: 'none',
+                  borderRadius: 8,
+                  color: '#fff',
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 10px rgba(245, 158, 11, 0.25)',
+                  whiteSpace: 'nowrap',
+                  transition: 'opacity 0.15s ease',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.9'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
+              >
+                <Square size={12} fill="#fff" />
+                Stop Selected
+              </button>
+
+              <button
+                onClick={handleBulkDelete}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '7px 15px',
+                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  borderRadius: 8,
+                  color: '#f87171',
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  transition: 'background 0.15s ease',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.25)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.15)'; }}
+              >
+                <Trash2 size={12} />
+                Delete Selected
+              </button>
+            </div>
+          </div>
+        )}
       </div>
       )}
 
@@ -6400,7 +6424,7 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
                     Software Updates
                   </h3>
                   <p style={{ margin: '2px 0 0', fontSize: 11.5, color: '#8b92a2' }}>
-                    Multi Agent Browser • Current v2.0.0
+                    Multi Agent Browser • Current v2.1.0
                   </p>
                 </div>
               </div>
@@ -6617,7 +6641,7 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
                       You are up to date!
                     </h4>
                     <p style={{ margin: '3px 0 0', fontSize: 12, color: '#8b92a2', lineHeight: 1.4 }}>
-                      Multi Agent v2.0.0 is the latest available version.
+                      Multi Agent v2.1.0 is the latest available version.
                     </p>
                   </div>
                 </div>

@@ -1182,7 +1182,7 @@ export const CloudSyncPanel: React.FC<CloudSyncPanelProps> = ({
                             color: '#8b92a2',
                           }}
                         >
-                          <span>Multi Agent Desktop Browser • v2.0.0</span>
+                          <span>Multi Agent Desktop Browser • v2.1.0</span>
                           <span>Chromium Core 131.0.6778.86 • Protected</span>
                         </div>
                       </div>
