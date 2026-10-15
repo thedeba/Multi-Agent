@@ -11,6 +11,12 @@ import { verifyFirebaseIdToken } from '../security/firebase-auth-verifier';
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
 app.commandLine.appendSwitch('enable-features', 'NetworkService,NetworkServiceInProcess');
 
+// Isolate development userData from installed production app so LevelDB LOCK files never collide
+if (!app.isPackaged) {
+  const devUserData = path.join(app.getPath('appData'), 'Multi-Agent-Dev');
+  app.setPath('userData', devUserData);
+}
+
 let mainWindow: BrowserWindow | null = null;
 let authenticatedUserId: string | null = null;
 let authTransition = 0;
@@ -35,6 +41,7 @@ function createMainWindow() {
       sandbox: true,
       webSecurity: true,
       allowRunningInsecureContent: false,
+      partition: 'persist:main-window',
     },
   });
 
@@ -275,19 +282,32 @@ function registerIpcHandlers() {
   AppUpdaterManager.getInstance().registerIpcHandlers();
 }
 
-app.whenReady().then(() => {
-  AppPaths.getProfilesDir();
-  registerIpcHandlers();
-  BrowserInstanceManager.setProfileManager(profileManager);
-  BrowserInstanceManager.startWatchdog();
-  createMainWindow();
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createMainWindow();
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
     }
   });
-});
+
+  app.whenReady().then(() => {
+    AppPaths.getProfilesDir();
+    registerIpcHandlers();
+    BrowserInstanceManager.setProfileManager(profileManager);
+    BrowserInstanceManager.startWatchdog();
+    createMainWindow();
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createMainWindow();
+      }
+    });
+  });
+}
 
 app.on('before-quit', async () => {
   BrowserInstanceManager.stopWatchdog();

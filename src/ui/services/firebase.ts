@@ -30,7 +30,7 @@ export function getFirebaseServices() {
   if (!cachedAuth) {
     try {
       cachedAuth = initializeAuth(app, {
-        persistence: [indexedDBLocalPersistence, browserLocalPersistence],
+        persistence: [browserLocalPersistence, indexedDBLocalPersistence],
       });
     } catch {
       cachedAuth = getAuth(app);

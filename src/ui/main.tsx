@@ -31,6 +31,10 @@ const App: React.FC = () => {
     }
   }, []);
 
+  useEffect(() => {
+    refreshProfiles();
+  }, [refreshProfiles]);
+
   return (
     <div className="app-container">
       {authState === 'ready' ? (
@@ -78,6 +82,7 @@ const App: React.FC = () => {
         required={authState !== 'ready'}
         onProfilesUpdated={refreshProfiles}
         onAuthStateChanged={handleAuthStateChanged}
+        profiles={profiles}
       />
     </div>
   );

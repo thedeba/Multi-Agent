@@ -51,11 +51,6 @@ function parseCloudProfile(id: string, data: Record<string, unknown>): Profile {
 
 export async function syncProfilesFromCloud(user: User): Promise<Profile[]> {
   const { db } = getFirebaseServices();
-  const demoBatch = writeBatch(db);
-  for (const profileId of demoProfileIds) {
-    demoBatch.delete(doc(db, 'users', user.uid, 'profiles', profileId));
-  }
-  await demoBatch.commit();
 
   const snapshot = await execute(db.pipeline().collection(`users/${user.uid}/profiles`));
   const rawProfiles = snapshot.results.map((profileDoc) => {
@@ -86,7 +81,7 @@ export async function syncProfilesFromCloud(user: User): Promise<Profile[]> {
   }
 
   if (hasCleanup) {
-    await cleanupBatch.commit();
+    cleanupBatch.commit().catch((err) => console.warn('Cleanup batch failed:', err));
   }
 
   // When profiles are synced, also restore cookies for each profile
@@ -123,14 +118,10 @@ export async function syncProfilesFromCloud(user: User): Promise<Profile[]> {
     accountProfiles = await window.browserAPI.replaceCloudProfiles(mergedProfiles);
   }
 
-  // Bidirectional cookie sync for all synced profiles
-  for (const p of accountProfiles) {
-    try {
-      await syncProfileCookies(user, p.id);
-    } catch {
-      // Non-blocking
-    }
-  }
+  // Bidirectional cookie sync in parallel background so UI is unblocked immediately!
+  Promise.allSettled(
+    accountProfiles.map((p) => syncProfileCookies(user, p.id))
+  ).catch((err) => console.warn('Background cookie sync error:', err));
 
   return accountProfiles;
 }
