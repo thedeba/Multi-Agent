@@ -137,6 +137,35 @@ export class SessionSyncServer extends EventEmitter {
           return;
         }
 
+        if (req.method === 'POST' && url.pathname === '/api/window-closed') {
+          let body = '';
+          req.on('data', (chunk) => { body += chunk; });
+          req.on('end', () => {
+            try {
+              let profileId = url.searchParams.get('profileId');
+              if (!profileId && body) {
+                try {
+                  const parsed = JSON.parse(body);
+                  profileId = parsed.profileId;
+                } catch {}
+              }
+              if (profileId) {
+                this.clearHeartbeat(profileId);
+                const session = this.getSession(profileId);
+                this.saveSessionToDisk(profileId, session.cookies, session.openUrls);
+                this.emit('window-closed', profileId);
+                this.emit('session-exited', { profileId, cookies: session.cookies, openUrls: session.openUrls });
+              }
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: true }));
+            } catch (err: any) {
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: false, error: err.message }));
+            }
+          });
+          return;
+        }
+
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Not found' }));
       });

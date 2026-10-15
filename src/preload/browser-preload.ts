@@ -40,6 +40,7 @@ const IPC_CHANNELS = {
   COOKIE_EXPORT: 'cookie:export',
   COOKIE_IMPORT: 'cookie:import',
   PROFILE_SESSION_EXITED: 'profile:session-exited',
+  PROFILE_SESSION_UPDATED: 'profile:session-updated',
   PROFILE_GET_SAVED_SESSION: 'profile:get-saved-session',
   PROFILE_SET_SAVED_SESSION: 'profile:set-saved-session',
   STORAGE_CLEAR: 'storage:clear',
@@ -163,6 +164,11 @@ const browserAPI = {
     const handler = (_event: Electron.IpcRendererEvent, data: { profileId: string; cookies: any[]; openUrls: string[] }) => callback(data);
     ipcRenderer.on(IPC_CHANNELS.PROFILE_SESSION_EXITED, handler);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.PROFILE_SESSION_EXITED, handler);
+  },
+  onProfileSessionUpdated: (callback: (data: { profileId: string; cookies: any[]; openUrls: string[] }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: { profileId: string; cookies: any[]; openUrls: string[] }) => callback(data);
+    ipcRenderer.on(IPC_CHANNELS.PROFILE_SESSION_UPDATED, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.PROFILE_SESSION_UPDATED, handler);
   },
   getSavedSession: (profileId: string): Promise<{ cookies: any[]; openUrls: string[] }> =>
     ipcRenderer.invoke(IPC_CHANNELS.PROFILE_GET_SAVED_SESSION, { profileId }),

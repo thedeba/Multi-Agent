@@ -72,6 +72,28 @@ describe('Session and Cookie Sync & Resume', () => {
     expect(bgContent).toContain('http://127.0.0.1:49500');
     expect(bgContent).toContain('chrome.cookies.getAll');
     expect(bgContent).toContain('chrome.cookies.set');
+    expect(bgContent).toContain('details.domain = c.domain.replace(/^\\./, \'\');');
+  });
+
+  it('handles /api/window-closed and emits window-closed event', async () => {
+    const server = SessionSyncServer.getInstance();
+    const port = await server.start();
+
+    let emittedProfileId: string | null = null;
+    server.once('window-closed', (profileId: string) => {
+      emittedProfileId = profileId;
+    });
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/window-closed?profileId=test-profile-close`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profileId: 'test-profile-close' }),
+    });
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.success).toBe(true);
+    expect(emittedProfileId).toBe('test-profile-close');
   });
 });
 

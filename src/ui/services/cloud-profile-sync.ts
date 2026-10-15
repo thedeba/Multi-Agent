@@ -123,10 +123,10 @@ export async function syncProfilesFromCloud(user: User): Promise<Profile[]> {
     accountProfiles = await window.browserAPI.replaceCloudProfiles(mergedProfiles);
   }
 
-  // Restore cloud cookies for all synced profiles
+  // Bidirectional cookie sync for all synced profiles
   for (const p of accountProfiles) {
     try {
-      await restoreProfileCookiesFromCloud(user, p.id);
+      await syncProfileCookies(user, p.id);
     } catch {
       // Non-blocking
     }
@@ -185,7 +185,7 @@ export async function saveProfileCookiesToCloud(
 export async function fetchProfileCookiesFromCloud(
   user: User,
   profileId: string
-): Promise<{ cookies: any[]; openUrls: string[] } | null> {
+): Promise<{ cookies: any[]; openUrls: string[]; updatedAt?: number } | null> {
   const { db } = getFirebaseServices();
   const docRef = doc(db, 'users', user.uid, 'profile_cookies', profileId);
   const snapshot = await getDoc(docRef);
@@ -196,9 +196,35 @@ export async function fetchProfileCookiesFromCloud(
   try {
     const cookies = JSON.parse(data.cookiesJson || '[]');
     const openUrls = Array.isArray(data.openUrls) ? data.openUrls : [];
-    return { cookies, openUrls };
+    return { cookies, openUrls, updatedAt: Number(data.updatedAt) || undefined };
   } catch {
     return null;
+  }
+}
+
+export async function syncProfileCookies(
+  user: User,
+  profileId: string
+): Promise<void> {
+  if (!window.browserAPI) return;
+
+  const cloudData = await fetchProfileCookiesFromCloud(user, profileId);
+  const localSession = await window.browserAPI.getSavedSession(profileId);
+
+  const hasCloudCookies = Boolean(cloudData && Array.isArray(cloudData.cookies) && cloudData.cookies.length > 0);
+  const hasLocalCookies = Boolean(localSession && Array.isArray(localSession.cookies) && localSession.cookies.length > 0);
+
+  if (hasCloudCookies && !hasLocalCookies) {
+    // Cloud has cookies, local is empty (e.g. logging into a second computer): restore locally
+    await window.browserAPI.saveSavedSession(profileId, cloudData!);
+    await window.browserAPI.importCookies(profileId, JSON.stringify(cloudData!.cookies));
+  } else if (!hasCloudCookies && hasLocalCookies) {
+    // Local has cookies from prior sessions, cloud is empty: push to Firebase!
+    await saveProfileCookiesToCloud(user, profileId, localSession.cookies, localSession.openUrls || []);
+  } else if (hasCloudCookies && hasLocalCookies) {
+    // Both have cookies: keep local in sync with cloud
+    await window.browserAPI.saveSavedSession(profileId, cloudData!);
+    await window.browserAPI.importCookies(profileId, JSON.stringify(cloudData!.cookies));
   }
 }
 

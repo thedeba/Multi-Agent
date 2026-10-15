@@ -48,6 +48,23 @@ export class BrowserInstanceManager {
           console.error(`Failed to auto-stop profile ${profileId} on window close:`, err);
         }
       });
+
+      const sessionDebounce = new Map<string, NodeJS.Timeout>();
+      syncServer.on('session-updated', ({ profileId, cookies, openUrls }: { profileId: string; cookies: any[]; openUrls: string[] }) => {
+        const existing = sessionDebounce.get(profileId);
+        if (existing) clearTimeout(existing);
+        const timer = setTimeout(() => {
+          sessionDebounce.delete(profileId);
+          if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+            this.mainWindow.webContents.send(IPC_CHANNELS.PROFILE_SESSION_UPDATED, {
+              profileId,
+              cookies,
+              openUrls,
+            });
+          }
+        }, 1500);
+        sessionDebounce.set(profileId, timer);
+      });
     }
 
     if (this.watchdogTimer) return;
@@ -133,6 +150,23 @@ export class BrowserInstanceManager {
               ProfileLock.release(profile.id);
             }
             this.profileManager?.updateProfileStatus(profile.id, 'stopped');
+
+            // Save final session
+            try {
+              const syncServer = SessionSyncServer.getInstance();
+              const finalSession = syncServer.getSession(profile.id);
+              syncServer.saveSessionToDisk(profile.id, finalSession.cookies, finalSession.openUrls);
+              if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+                this.mainWindow.webContents.send(IPC_CHANNELS.PROFILE_SESSION_EXITED, {
+                  profileId: profile.id,
+                  cookies: finalSession.cookies,
+                  openUrls: finalSession.openUrls,
+                });
+              }
+            } catch {
+              // Non-blocking session capture
+            }
+
             try {
               process.kill(pid, 'SIGTERM');
             } catch {}
@@ -437,6 +471,22 @@ export class BrowserInstanceManager {
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
       }
+    }
+
+    // Capture and broadcast latest cookies and open tabs for cloud sync
+    try {
+      const syncServer = SessionSyncServer.getInstance();
+      const finalSession = syncServer.getSession(profileId);
+      syncServer.saveSessionToDisk(profileId, finalSession.cookies, finalSession.openUrls);
+      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+        this.mainWindow.webContents.send(IPC_CHANNELS.PROFILE_SESSION_EXITED, {
+          profileId,
+          cookies: finalSession.cookies,
+          openUrls: finalSession.openUrls,
+        });
+      }
+    } catch {
+      // Non-blocking session capture
     }
 
     const timeout = Date.now() + 1500;

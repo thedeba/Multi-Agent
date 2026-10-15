@@ -133,6 +133,7 @@ export const IPC_CHANNELS = {
   COOKIE_EXPORT: 'cookie:export',
   COOKIE_IMPORT: 'cookie:import',
   PROFILE_SESSION_EXITED: 'profile:session-exited',
+  PROFILE_SESSION_UPDATED: 'profile:session-updated',
   PROFILE_GET_SAVED_SESSION: 'profile:get-saved-session',
   PROFILE_SET_SAVED_SESSION: 'profile:set-saved-session',
   STORAGE_CLEAR: 'storage:clear',

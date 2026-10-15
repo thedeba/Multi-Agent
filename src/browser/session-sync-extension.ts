@@ -54,18 +54,18 @@ async function restoreSession() {
           httpOnly: !!c.httpOnly,
         };
 
-        if (c.domain && !c.domain.startsWith('.')) {
-          details.domain = c.domain;
-        } else if (c.domain) {
-          details.domain = c.domain;
+        if (c.domain) {
+          details.domain = c.domain.replace(/^\\./, '');
         }
 
         if (c.expirationDate && c.expirationDate > Date.now() / 1000) {
           details.expirationDate = c.expirationDate;
         }
 
-        if (c.sameSite && ['no_restriction', 'lax', 'strict'].includes(c.sameSite)) {
+        if (c.sameSite && ['lax', 'strict'].includes(c.sameSite)) {
           details.sameSite = c.sameSite;
+        } else if (c.sameSite === 'no_restriction' && details.secure) {
+          details.sameSite = 'no_restriction';
         }
 
         await chrome.cookies.set(details);

@@ -122,20 +122,46 @@ export const CloudSyncPanel: React.FC<CloudSyncPanelProps> = ({
         .finally(() => setBusy(false));
     });
 
-    const unsubSession = window.browserAPI.onProfileSessionExited?.((sessionExit) => {
-      saveProfileCookiesToCloud(
-        user,
-        sessionExit.profileId,
-        sessionExit.cookies || [],
-        sessionExit.openUrls || []
-      )
-        .then(() => setStatus(`Cloud saved: ${sessionExit.cookies?.length || 0} cookies & session state`))
-        .catch((err) => console.warn('Failed to sync cookies to cloud on exit:', err));
+    const pendingUpdates = new Map<string, NodeJS.Timeout>();
+
+    const saveSession = (sessionData: { profileId: string; cookies: any[]; openUrls: string[] }, immediate = false) => {
+      const existing = pendingUpdates.get(sessionData.profileId);
+      if (existing) clearTimeout(existing);
+
+      const doSave = () => {
+        pendingUpdates.delete(sessionData.profileId);
+        saveProfileCookiesToCloud(
+          user,
+          sessionData.profileId,
+          sessionData.cookies || [],
+          sessionData.openUrls || []
+        )
+          .then(() => setStatus(`Cloud saved: ${sessionData.cookies?.length || 0} cookies & session state`))
+          .catch((err) => console.warn('Failed to sync cookies to cloud:', err));
+      };
+
+      if (immediate) {
+        doSave();
+      } else {
+        const timer = setTimeout(doSave, 1500);
+        pendingUpdates.set(sessionData.profileId, timer);
+      }
+    };
+
+    const unsubSessionExited = window.browserAPI.onProfileSessionExited?.((sessionExit) => {
+      saveSession(sessionExit, true);
+    });
+
+    const unsubSessionUpdated = (window.browserAPI as any).onProfileSessionUpdated?.((sessionUpdate: any) => {
+      saveSession(sessionUpdate, false);
     });
 
     return () => {
       unsubProfile?.();
-      unsubSession?.();
+      unsubSessionExited?.();
+      unsubSessionUpdated?.();
+      for (const t of pendingUpdates.values()) clearTimeout(t);
+      pendingUpdates.clear();
     };
   }, [user]);
 
