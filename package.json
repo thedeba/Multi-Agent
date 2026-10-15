@@ -10,8 +10,8 @@
     "build": "npm run build:ui && npm run build:main",
     "test": "vitest run",
     "test:watch": "vitest",
-    "pack:mac": "npm run build && electron-builder --mac && rm -f release/*.blockmap",
-    "pack:win": "npm run build && electron-builder --win && rm -f release/*.blockmap"
+    "pack:mac": "npm run build && electron-builder --mac && node scripts/normalize-release-filenames.js",
+    "pack:win": "npm run build && electron-builder --win && node scripts/normalize-release-filenames.js"
   },
   "keywords": [
     "privacy",

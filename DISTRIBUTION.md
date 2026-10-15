@@ -114,19 +114,23 @@ to reduce Windows security warnings.
 6. Distribute only the intended files from `release/`; do not distribute
    `.env.local`, signing credentials, or Firebase service-account keys.
 
+> [!IMPORTANT]
+> **Use Hyphenated Asset Names for GitHub Releases:**
+> GitHub Releases automatically replaces spaces in uploaded filenames with dots (`.`), e.g. `Multi Agent-...` becomes `Multi.Agent-...`. However, `electron-updater` (Squirrel.Mac and NSIS) reads `latest-mac.yml` and `latest.yml`, which expect hyphenated names (`Multi-Agent-...`). To prevent **404 Not Found** errors during auto-updates, always upload artifacts using hyphenated names (handled automatically by `npm run pack:mac` / `npm run pack:win`).
+
 ## Release
 ```sh
 git tag v2.1.0
 git push origin v2.1.0
 
 gh release create v2.1.0 \
-  "release/Multi Agent Setup 2.1.0.exe" \
-  "release/Multi Agent-2.1.0-win.zip" \
-  "release/Multi Agent-2.1.0-arm64-win.zip" \
-  "release/Multi Agent-2.1.0-arm64.dmg" \
-  "release/Multi Agent-2.1.0.dmg" \
-  "release/Multi Agent-2.1.0-arm64-mac.zip" \
-  "release/Multi Agent-2.1.0-mac.zip" \
+  "release/Multi-Agent-Setup-2.1.0.exe" \
+  "release/Multi-Agent-2.1.0-win.zip" \
+  "release/Multi-Agent-2.1.0-arm64-win.zip" \
+  "release/Multi-Agent-2.1.0-arm64.dmg" \
+  "release/Multi-Agent-2.1.0.dmg" \
+  "release/Multi-Agent-2.1.0-arm64-mac.zip" \
+  "release/Multi-Agent-2.1.0-mac.zip" \
   "release/latest.yml" \
   "release/latest-mac.yml" \
   --title "Multi Agent v2.1.0" \
@@ -141,13 +145,13 @@ A new major release of Multi Agent, a privacy-focused desktop browser for macOS 
 - Improved release and distribution workflow.
 
 ### Downloads
-- **Windows (NSIS Installer):** Multi Agent Setup 2.1.0.exe
-- **Windows (x64 Portable ZIP):** Multi Agent-2.1.0-win.zip
-- **Windows (ARM64 Portable ZIP):** Multi Agent-2.1.0-arm64-win.zip
-- **macOS (Apple Silicon Installer):** Multi Agent-2.1.0-arm64.dmg
-- **macOS (Intel Installer):** Multi Agent-2.1.0.dmg
-- **macOS (Apple Silicon Auto-Update):** Multi Agent-2.1.0-arm64-mac.zip
-- **macOS (Intel Auto-Update):** Multi Agent-2.1.0-mac.zip
+- **Windows (NSIS Installer):** Multi-Agent-Setup-2.1.0.exe
+- **Windows (x64 Portable ZIP):** Multi-Agent-2.1.0-win.zip
+- **Windows (ARM64 Portable ZIP):** Multi-Agent-2.1.0-arm64-win.zip
+- **macOS (Apple Silicon Installer):** Multi-Agent-2.1.0-arm64.dmg
+- **macOS (Intel Installer):** Multi-Agent-2.1.0.dmg
+- **macOS (Apple Silicon Auto-Update):** Multi-Agent-2.1.0-arm64-mac.zip
+- **macOS (Intel Auto-Update):** Multi-Agent-2.1.0-mac.zip
 
 ### Installation
 Download the appropriate installer for your operating system and follow the installation instructions.
