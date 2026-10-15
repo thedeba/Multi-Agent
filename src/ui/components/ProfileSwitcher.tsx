@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   User,
   Plus,
@@ -261,6 +262,7 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
   const [updateStatus, setUpdateStatus] = useState<any>({ status: 'idle' });
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [activeActionMenuProfileId, setActiveActionMenuProfileId] = useState<string | null>(null);
+  const [actionMenuPosition, setActionMenuPosition] = useState<{ top: number; right: number; openUpwards: boolean } | null>(null);
 
   // Auto Updater listener
   useEffect(() => {
@@ -277,18 +279,30 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
     }
   }, []);
 
-  // Close actions dropdown on click outside
+  // Close actions dropdown on click outside, scroll, or resize
   useEffect(() => {
     if (!activeActionMenuProfileId) return;
     const handleDocumentClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement | null;
-      if (target && !target.closest('.col-actions-cell')) {
-        setActiveActionMenuProfileId(null);
+      if (target && (target.closest('.action-menu-dropdown-portal') || target.closest('.action-menu-trigger-btn'))) {
+        return;
       }
+      setActiveActionMenuProfileId(null);
+      setActionMenuPosition(null);
     };
+
+    const handleScrollOrResize = () => {
+      setActiveActionMenuProfileId(null);
+      setActionMenuPosition(null);
+    };
+
     document.addEventListener('mousedown', handleDocumentClick);
+    window.addEventListener('scroll', handleScrollOrResize, true);
+    window.addEventListener('resize', handleScrollOrResize);
     return () => {
       document.removeEventListener('mousedown', handleDocumentClick);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+      window.removeEventListener('resize', handleScrollOrResize);
     };
   }, [activeActionMenuProfileId]);
 
@@ -2033,11 +2047,10 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
               </tr>
             </thead>
             <tbody>
-              {filteredProfiles.map((p, index) => {
+              {filteredProfiles.map((p) => {
                 const isRunning = runningProfileIds.includes(p.id);
                 const hasProxy = p.proxy.enabled && Boolean(p.proxy.host);
                 const isSelected = selectedProfileIds.includes(p.id);
-                const isNearBottom = filteredProfiles.length > 2 && index >= filteredProfiles.length - 2;
 
                 return (
                   <tr
@@ -2383,12 +2396,27 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
                           </button>
                         )}
 
-                        {/* ⋮ Three-Dot Action Menu Container */}
+                        {/* ⋮ Three-Dot Action Menu Button */}
                         <div style={{ position: 'relative', display: 'inline-flex' }}>
                           <button
+                            className="action-menu-trigger-btn"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setActiveActionMenuProfileId(activeActionMenuProfileId === p.id ? null : p.id);
+                              if (activeActionMenuProfileId === p.id) {
+                                setActiveActionMenuProfileId(null);
+                                setActionMenuPosition(null);
+                              } else {
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                const menuHeight = 290;
+                                const spaceBelow = window.innerHeight - rect.bottom;
+                                const openUpwards = spaceBelow < menuHeight && rect.top > menuHeight;
+                                setActionMenuPosition({
+                                  top: openUpwards ? rect.top - 6 : rect.bottom + 6,
+                                  right: window.innerWidth - rect.right,
+                                  openUpwards,
+                                });
+                                setActiveActionMenuProfileId(p.id);
+                              }
                             }}
                             style={{
                               background: activeActionMenuProfileId === p.id ? '#232738' : 'transparent',
@@ -2413,171 +2441,6 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
                           >
                             <MoreVertical size={16} />
                           </button>
-
-                          {/* Dropdown Menu */}
-                          {activeActionMenuProfileId === p.id && (
-                            <div
-                              onClick={(e) => e.stopPropagation()}
-                              style={{
-                                position: 'absolute',
-                                right: 0,
-                                ...(isNearBottom ? { bottom: 'calc(100% + 4px)' } : { top: 'calc(100% + 4px)' }),
-                                backgroundColor: '#171923',
-                                border: '1px solid #2a2f45',
-                                borderRadius: 8,
-                                padding: '4px',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: 1,
-                                zIndex: 1000,
-                                minWidth: 170,
-                                boxShadow: '0 12px 32px rgba(0,0,0,0.7)',
-                              }}
-                            >
-                              {/* Edit Profile */}
-                              <button
-                                disabled={!isAuthenticated}
-                                onClick={() => { setActiveActionMenuProfileId(null); handleOpenEdit(p); }}
-                                style={{
-                                  background: 'none', border: 'none', color: '#e2e8f0',
-                                  display: 'flex', alignItems: 'center', gap: 9,
-                                  padding: '7px 10px', borderRadius: 6, fontSize: 12.5,
-                                  cursor: 'pointer', textAlign: 'left', width: '100%',
-                                  transition: 'background 0.12s ease',
-                                }}
-                                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
-                                onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
-                              >
-                                <Edit2 size={13.5} style={{ color: '#94a3b8' }} /> Edit Profile
-                              </button>
-
-
-                              {/* Clone Profile */}
-                              <button
-                                disabled={!isAuthenticated}
-                                onClick={() => { setActiveActionMenuProfileId(null); handleDuplicate(p.id); }}
-                                style={{
-                                  background: 'none', border: 'none', color: '#e2e8f0',
-                                  display: 'flex', alignItems: 'center', gap: 9,
-                                  padding: '7px 10px', borderRadius: 6, fontSize: 12.5,
-                                  cursor: 'pointer', textAlign: 'left', width: '100%',
-                                  transition: 'background 0.12s ease',
-                                }}
-                                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
-                                onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
-                              >
-                                <Copy size={13.5} style={{ color: '#94a3b8' }} /> Clone Profile
-                              </button>
-
-                              {/* Rotate IP (if proxy enabled) */}
-                              {hasProxy && (
-                                <button
-                                  onClick={() => { setActiveActionMenuProfileId(null); handleRotateProxy(p.id, (p.proxy as any).changeIpUrl); }}
-                                  style={{
-                                    background: 'none', border: 'none', color: '#e2e8f0',
-                                    display: 'flex', alignItems: 'center', gap: 9,
-                                    padding: '7px 10px', borderRadius: 6, fontSize: 12.5,
-                                    cursor: 'pointer', textAlign: 'left', width: '100%',
-                                    transition: 'background 0.12s ease',
-                                  }}
-                                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
-                                  onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
-                                >
-                                  <Zap size={13.5} style={{ color: '#ef4444' }} /> Rotate IP
-                                </button>
-                              )}
-
-                              {/* Divider */}
-                              <div style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', margin: '3px 6px' }} />
-
-                              {/* Manage Cookies */}
-                              <button
-                                onClick={() => { setActiveActionMenuProfileId(null); handleOpenCookieModal(p); }}
-                                style={{
-                                  background: 'none', border: 'none', color: '#e2e8f0',
-                                  display: 'flex', alignItems: 'center', gap: 9,
-                                  padding: '7px 10px', borderRadius: 6, fontSize: 12.5,
-                                  cursor: 'pointer', textAlign: 'left', width: '100%',
-                                  transition: 'background 0.12s ease',
-                                }}
-                                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
-                                onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
-                              >
-                                <Cookie size={13.5} style={{ color: '#f59e0b' }} /> Manage Cookies
-                              </button>
-
-                              {/* Warming Bot */}
-                              <button
-                                onClick={() => { setActiveActionMenuProfileId(null); handleWarmUpProfile(p.id); }}
-                                style={{
-                                  background: 'none', border: 'none', color: '#e2e8f0',
-                                  display: 'flex', alignItems: 'center', gap: 9,
-                                  padding: '7px 10px', borderRadius: 6, fontSize: 12.5,
-                                  cursor: 'pointer', textAlign: 'left', width: '100%',
-                                  transition: 'background 0.12s ease',
-                                }}
-                                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
-                                onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
-                              >
-                                <Flame size={13.5} style={{ color: '#f97316' }} /> Warming Bot
-                              </button>
-
-                              {/* Leak Test */}
-                              <button
-                                onClick={() => { setActiveActionMenuProfileId(null); handleQuickLeakTest(p.id); }}
-                                style={{
-                                  background: 'none', border: 'none', color: '#e2e8f0',
-                                  display: 'flex', alignItems: 'center', gap: 9,
-                                  padding: '7px 10px', borderRadius: 6, fontSize: 12.5,
-                                  cursor: 'pointer', textAlign: 'left', width: '100%',
-                                  transition: 'background 0.12s ease',
-                                }}
-                                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
-                                onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
-                              >
-                                <Compass size={13.5} style={{ color: '#06b6d4' }} /> Leak Test
-                              </button>
-
-                              {/* Divider */}
-                              <div style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', margin: '3px 6px' }} />
-
-                              {/* Export JSON */}
-                              <button
-                                onClick={() => { setActiveActionMenuProfileId(null); handleExport(p.id); }}
-                                style={{
-                                  background: 'none', border: 'none', color: '#e2e8f0',
-                                  display: 'flex', alignItems: 'center', gap: 9,
-                                  padding: '7px 10px', borderRadius: 6, fontSize: 12.5,
-                                  cursor: 'pointer', textAlign: 'left', width: '100%',
-                                  transition: 'background 0.12s ease',
-                                }}
-                                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
-                                onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
-                              >
-                                <Download size={13.5} style={{ color: '#94a3b8' }} /> Export JSON
-                              </button>
-
-                              {/* Divider */}
-                              <div style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', margin: '3px 6px' }} />
-
-                              {/* Delete Profile */}
-                              <button
-                                disabled={!isAuthenticated}
-                                onClick={() => { setActiveActionMenuProfileId(null); handleDelete(p.id); }}
-                                style={{
-                                  background: 'none', border: 'none', color: '#ef4444',
-                                  display: 'flex', alignItems: 'center', gap: 9,
-                                  padding: '7px 10px', borderRadius: 6, fontSize: 12.5,
-                                  cursor: 'pointer', textAlign: 'left', width: '100%',
-                                  transition: 'background 0.12s ease',
-                                }}
-                                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; }}
-                                onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
-                              >
-                                <Trash2 size={13.5} /> Delete Profile
-                              </button>
-                            </div>
-                          )}
                         </div>
                       </div>
                     </td>
@@ -2643,6 +2506,214 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
         </div>
       </div>
       )}
+
+      {/* Action Menu Dropdown Portal */}
+      {typeof document !== 'undefined' && activeActionMenuProfileId && actionMenuPosition && (() => {
+        const activeProfile = profiles.find((pr) => pr.id === activeActionMenuProfileId);
+        if (!activeProfile) return null;
+        const activeHasProxy = activeProfile.proxy?.enabled && Boolean(activeProfile.proxy?.host);
+
+        return createPortal(
+          <div
+            className="action-menu-dropdown-portal"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: 'fixed',
+              ...(actionMenuPosition.openUpwards
+                ? { bottom: `${Math.max(8, window.innerHeight - actionMenuPosition.top)}px` }
+                : { top: `${Math.max(8, actionMenuPosition.top)}px` }),
+              right: `${Math.max(12, actionMenuPosition.right)}px`,
+              backgroundColor: '#171923',
+              border: '1px solid #2a2f45',
+              borderRadius: 8,
+              padding: '4px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 1,
+              zIndex: 99999,
+              minWidth: 175,
+              maxHeight: 'calc(100vh - 24px)',
+              overflowY: 'auto',
+              boxShadow: '0 12px 32px rgba(0,0,0,0.75)',
+            }}
+          >
+            {/* Edit Profile */}
+            <button
+              disabled={!isAuthenticated}
+              onClick={() => {
+                setActiveActionMenuProfileId(null);
+                setActionMenuPosition(null);
+                handleOpenEdit(activeProfile);
+              }}
+              style={{
+                background: 'none', border: 'none', color: '#e2e8f0',
+                display: 'flex', alignItems: 'center', gap: 9,
+                padding: '7px 10px', borderRadius: 6, fontSize: 12.5,
+                cursor: 'pointer', textAlign: 'left', width: '100%',
+                transition: 'background 0.12s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
+            >
+              <Edit2 size={13.5} style={{ color: '#94a3b8' }} /> Edit Profile
+            </button>
+
+            {/* Clone Profile */}
+            <button
+              disabled={!isAuthenticated}
+              onClick={() => {
+                setActiveActionMenuProfileId(null);
+                setActionMenuPosition(null);
+                handleDuplicate(activeProfile.id);
+              }}
+              style={{
+                background: 'none', border: 'none', color: '#e2e8f0',
+                display: 'flex', alignItems: 'center', gap: 9,
+                padding: '7px 10px', borderRadius: 6, fontSize: 12.5,
+                cursor: 'pointer', textAlign: 'left', width: '100%',
+                transition: 'background 0.12s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
+            >
+              <Copy size={13.5} style={{ color: '#94a3b8' }} /> Clone Profile
+            </button>
+
+            {/* Rotate IP (if proxy enabled) */}
+            {activeHasProxy && (
+              <button
+                onClick={() => {
+                  setActiveActionMenuProfileId(null);
+                  setActionMenuPosition(null);
+                  handleRotateProxy(activeProfile.id, (activeProfile.proxy as any).changeIpUrl);
+                }}
+                style={{
+                  background: 'none', border: 'none', color: '#e2e8f0',
+                  display: 'flex', alignItems: 'center', gap: 9,
+                  padding: '7px 10px', borderRadius: 6, fontSize: 12.5,
+                  cursor: 'pointer', textAlign: 'left', width: '100%',
+                  transition: 'background 0.12s ease',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
+              >
+                <Zap size={13.5} style={{ color: '#ef4444' }} /> Rotate IP
+              </button>
+            )}
+
+            {/* Divider */}
+            <div style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', margin: '3px 6px' }} />
+
+            {/* Manage Cookies */}
+            <button
+              onClick={() => {
+                setActiveActionMenuProfileId(null);
+                setActionMenuPosition(null);
+                handleOpenCookieModal(activeProfile);
+              }}
+              style={{
+                background: 'none', border: 'none', color: '#e2e8f0',
+                display: 'flex', alignItems: 'center', gap: 9,
+                padding: '7px 10px', borderRadius: 6, fontSize: 12.5,
+                cursor: 'pointer', textAlign: 'left', width: '100%',
+                transition: 'background 0.12s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
+            >
+              <Cookie size={13.5} style={{ color: '#f59e0b' }} /> Manage Cookies
+            </button>
+
+            {/* Warming Bot */}
+            <button
+              onClick={() => {
+                setActiveActionMenuProfileId(null);
+                setActionMenuPosition(null);
+                handleWarmUpProfile(activeProfile.id);
+              }}
+              style={{
+                background: 'none', border: 'none', color: '#e2e8f0',
+                display: 'flex', alignItems: 'center', gap: 9,
+                padding: '7px 10px', borderRadius: 6, fontSize: 12.5,
+                cursor: 'pointer', textAlign: 'left', width: '100%',
+                transition: 'background 0.12s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
+            >
+              <Flame size={13.5} style={{ color: '#f97316' }} /> Warming Bot
+            </button>
+
+            {/* Leak Test */}
+            <button
+              onClick={() => {
+                setActiveActionMenuProfileId(null);
+                setActionMenuPosition(null);
+                handleQuickLeakTest(activeProfile.id);
+              }}
+              style={{
+                background: 'none', border: 'none', color: '#e2e8f0',
+                display: 'flex', alignItems: 'center', gap: 9,
+                padding: '7px 10px', borderRadius: 6, fontSize: 12.5,
+                cursor: 'pointer', textAlign: 'left', width: '100%',
+                transition: 'background 0.12s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
+            >
+              <Compass size={13.5} style={{ color: '#06b6d4' }} /> Leak Test
+            </button>
+
+            {/* Divider */}
+            <div style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', margin: '3px 6px' }} />
+
+            {/* Export JSON */}
+            <button
+              onClick={() => {
+                setActiveActionMenuProfileId(null);
+                setActionMenuPosition(null);
+                handleExport(activeProfile.id);
+              }}
+              style={{
+                background: 'none', border: 'none', color: '#e2e8f0',
+                display: 'flex', alignItems: 'center', gap: 9,
+                padding: '7px 10px', borderRadius: 6, fontSize: 12.5,
+                cursor: 'pointer', textAlign: 'left', width: '100%',
+                transition: 'background 0.12s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
+            >
+              <Download size={13.5} style={{ color: '#94a3b8' }} /> Export JSON
+            </button>
+
+            {/* Divider */}
+            <div style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.06)', margin: '3px 6px' }} />
+
+            {/* Delete Profile */}
+            <button
+              disabled={!isAuthenticated}
+              onClick={() => {
+                setActiveActionMenuProfileId(null);
+                setActionMenuPosition(null);
+                handleDelete(activeProfile.id);
+              }}
+              style={{
+                background: 'none', border: 'none', color: '#ef4444',
+                display: 'flex', alignItems: 'center', gap: 9,
+                padding: '7px 10px', borderRadius: 6, fontSize: 12.5,
+                cursor: 'pointer', textAlign: 'left', width: '100%',
+                transition: 'background 0.12s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
+            >
+              <Trash2 size={13.5} /> Delete Profile
+            </button>
+          </div>,
+          document.body
+        );
+      })()}
 
       {/* The profile editor occupies the app page instead of opening as a dialog. */}
       {isCreateOpen && (
