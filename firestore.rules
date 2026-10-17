@@ -12,12 +12,15 @@ rules_version = '2';
 //   - isTemporary: boolean, always false (immutable)
 //   - privacyLevel: "standard" | "balanced" | "strict"
 //   - webrtcPolicy: "default" | "default_public_interface_only" |
-//     "disable_non_proxied_udp"
+//     "disable_non_proxied_udp" | "disabled"
 //   - proxy: map with exactly enabled, mode, host, port; credentials excluded
 //   - os: "mac" | "windows"
 //   - browserType: "chrome" | "edge" | "brave"
 //   - browserVersion: string, 1-64 characters
 //   - customUserAgent: optional string, at most 512 characters
+//   - language: optional string, at most 128 characters
+//   - timezone: optional string, at most 128 characters
+//   - remoteDebuggingPort: optional integer, 1024-65535
 //   - notes: string, 0-10000 characters
 //   - group: string, 0-64 characters
 //   - tags: list, at most 20 strings, each at most 64 characters
@@ -61,6 +64,9 @@ service cloud.firestore {
         'browserType',
         'browserVersion',
         'customUserAgent',
+        'language',
+        'timezone',
+        'remoteDebuggingPort',
         'notes',
         'group',
         'tags',
@@ -149,7 +155,8 @@ service cloud.firestore {
         && data.webrtcPolicy in [
           'default',
           'default_public_interface_only',
-          'disable_non_proxied_udp'
+          'disable_non_proxied_udp',
+          'disabled'
         ]
         && isValidProxy(data.proxy)
         && data.os in ['mac', 'windows']
@@ -161,6 +168,14 @@ service cloud.firestore {
           || (data.customUserAgent is string
             && data.customUserAgent.size() <= 512
             && !data.customUserAgent.matches('.*[\\r\\n].*')))
+        && (!('language' in data)
+          || (data.language is string && data.language.size() <= 128))
+        && (!('timezone' in data)
+          || (data.timezone is string && data.timezone.size() <= 128))
+        && (!('remoteDebuggingPort' in data)
+          || (data.remoteDebuggingPort is int
+            && data.remoteDebuggingPort >= 1024
+            && data.remoteDebuggingPort <= 65535))
         && data.notes is string
         && data.notes.size() <= 10000
         && data.group is string

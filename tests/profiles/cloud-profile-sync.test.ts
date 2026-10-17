@@ -21,6 +21,9 @@ describe('Cloud profile serialization', () => {
       os: 'mac',
       browserType: 'chrome',
       browserVersion: '154.0.8037.98',
+      language: 'en-GB',
+      timezone: 'Europe/London',
+      remoteDebuggingPort: 9222,
       customUserAgent: 'CustomBrowser/1.0',
       group: 'Work',
       storagePath: '/private/profile/path',
@@ -41,6 +44,9 @@ describe('Cloud profile serialization', () => {
     expect(cloudData).toMatchObject({
       isTemporary: false,
       group: 'Work',
+      language: 'en-GB',
+      timezone: 'Europe/London',
+      remoteDebuggingPort: 9222,
       customUserAgent: 'CustomBrowser/1.0',
       proxy: { enabled: true, host: 'proxy.example.com', port: 8080 },
     });
