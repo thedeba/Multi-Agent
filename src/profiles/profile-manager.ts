@@ -129,8 +129,11 @@ export class ProfileManager {
         lastUsedAt: local?.lastUsedAt ?? null,
         proxy: {
           ...remote.proxy,
-          username: local?.proxy.username,
-          password: local?.proxy.password,
+          username: local?.proxy.username ?? remote.proxy.username,
+          password: local?.proxy.password ?? remote.proxy.password,
+          changeIpUrl: local?.proxy.changeIpUrl ?? remote.proxy.changeIpUrl,
+          proxyType: local?.proxy.proxyType ?? remote.proxy.proxyType,
+          freeProxyId: local?.proxy.freeProxyId ?? remote.proxy.freeProxyId,
         },
       };
       nextProfiles.set(remote.id, profile);

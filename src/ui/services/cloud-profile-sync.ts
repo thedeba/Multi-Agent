@@ -82,17 +82,15 @@ async function restoreProfileSecretsFromCloud(
     throw new Error('Encrypted proxy credentials have an invalid payload.');
   }
 
-  return {
-    enabled: false,
-    mode: 'direct',
-    host: '',
-    port: 8080,
-    username: typeof values.username === 'string' ? values.username : undefined,
-    password: typeof values.password === 'string' ? values.password : undefined,
-    changeIpUrl: typeof values.changeIpUrl === 'string' ? values.changeIpUrl : undefined,
-    proxyType: values.proxyType as Profile['proxy']['proxyType'],
-    freeProxyId: typeof values.freeProxyId === 'string' ? values.freeProxyId : undefined,
-  };
+  const restored: Record<string, unknown> = {};
+  if (typeof values.username === 'string') restored.username = values.username;
+  if (typeof values.password === 'string') restored.password = values.password;
+  if (typeof values.changeIpUrl === 'string') restored.changeIpUrl = values.changeIpUrl;
+  if (['manual', 'free', 'direct'].includes(String(values.proxyType))) {
+    restored.proxyType = values.proxyType;
+  }
+  if (typeof values.freeProxyId === 'string') restored.freeProxyId = values.freeProxyId;
+  return restored as Profile['proxy'];
 }
 
 async function restoreLegacyCookiesIfLocalSessionIsEmpty(user: User, profileId: string): Promise<void> {
@@ -264,6 +262,12 @@ export async function syncProfilesFromCloud(user: User, passphrase?: string): Pr
       });
       await deleteDoc(doc(db, 'users', user.uid, 'profile_cookies', profile.id));
     }
+
+    const refreshedProfiles = await window.browserAPI.listProfiles();
+    accountProfiles = accountProfiles.map((profile) => {
+      const refreshed = refreshedProfiles.find((item) => item.id === profile.id);
+      return refreshed || profile;
+    });
   }
 
   return accountProfiles;
