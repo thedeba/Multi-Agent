@@ -21,20 +21,60 @@ interface EncryptedProfileSecrets extends EncryptedSecrets {
   updatedAt: number;
 }
 
-async function saveProfileSecretsToCloud(
+export async function saveProfileSecretsToCloud(
   user: User,
   profile: Profile,
-  passphrase: string,
+  passphrase?: string,
 ): Promise<void> {
+  const effectivePassphrase = passphrase && passphrase.length >= 12 && passphrase.length <= 1024
+    ? passphrase
+    : user.uid;
+  const { db } = getFirebaseServices();
   const { username, password, changeIpUrl, proxyType, freeProxyId } = profile.proxy;
   const secrets = { username, password, changeIpUrl, proxyType, freeProxyId };
-  const reference = doc(getFirebaseServices().db, 'users', user.uid, 'profile_secrets', profile.id);
-  if (!Object.values(secrets).some((value) => value !== undefined && value !== '')) {
+  const reference = doc(db, 'users', user.uid, 'profile_secrets', profile.id);
+
+  let merged = { ...secrets };
+  try {
+    const snapshot = await getDoc(reference);
+    if (snapshot.exists()) {
+      const data = snapshot.data() as Partial<EncryptedProfileSecrets>;
+      if (
+        data.profileId === profile.id &&
+        data.version === 1 &&
+        typeof data.salt === 'string' &&
+        typeof data.iv === 'string' &&
+        typeof data.ciphertext === 'string'
+      ) {
+        const existing = await decryptProfileSecrets(
+          {
+            version: data.version,
+            salt: data.salt,
+            iv: data.iv,
+            ciphertext: data.ciphertext,
+          },
+          effectivePassphrase
+        );
+        if (typeof existing === 'object' && existing !== null && !Array.isArray(existing)) {
+          const values = existing as Record<string, unknown>;
+          for (const key of ['username', 'password', 'changeIpUrl', 'proxyType', 'freeProxyId'] as const) {
+            if (merged[key] === undefined && values[key] !== undefined) {
+              (merged as Record<string, unknown>)[key] = values[key];
+            }
+          }
+        }
+      }
+    }
+  } catch {
+    // Fall back to saving the currently available secrets.
+  }
+
+  if (!Object.values(merged).some((value) => value !== undefined && value !== '')) {
     await deleteDoc(reference);
     return;
   }
 
-  const encrypted = await encryptProfileSecrets(secrets, passphrase);
+  const encrypted = await encryptProfileSecrets(merged, effectivePassphrase);
   await setDoc(reference, {
     profileId: profile.id,
     ...encrypted,
@@ -42,7 +82,7 @@ async function saveProfileSecretsToCloud(
   } satisfies EncryptedProfileSecrets);
 }
 
-async function restoreProfileSecretsFromCloud(
+export async function restoreProfileSecretsFromCloud(
   user: User,
   profileId: string,
   passphrase: string,
@@ -224,51 +264,64 @@ export async function syncProfilesFromCloud(user: User, passphrase?: string): Pr
     accountProfiles = await window.browserAPI.replaceCloudProfiles(mergedProfiles);
   }
 
-  if (passphrase) {
-    const idToken = await user.getIdToken();
-    const apiKey = import.meta.env.VITE_FIREBASE_API_KEY;
-    const bucket = import.meta.env.VITE_FIREBASE_STORAGE_BUCKET;
+  const effectivePassphrase = passphrase && passphrase.length >= 12 && passphrase.length <= 1024
+    ? passphrase
+    : user.uid;
+  const idToken = await user.getIdToken();
+  const apiKey = import.meta.env.VITE_FIREBASE_API_KEY;
+  const bucket = import.meta.env.VITE_FIREBASE_STORAGE_BUCKET;
 
-    for (const profile of accountProfiles) {
-      const currentProfiles = await window.browserAPI.listProfiles();
-      const current = currentProfiles.find((item) => item.id === profile.id);
-      const hasLocalSecrets = Boolean(
-        current && [
-          current.proxy.username,
-          current.proxy.password,
-          current.proxy.changeIpUrl,
-          current.proxy.freeProxyId,
-        ].some(Boolean)
-      );
-      if (current && hasLocalSecrets) {
-        await saveProfileSecretsToCloud(user, current, passphrase);
+  for (const profile of accountProfiles) {
+    const currentProfiles = await window.browserAPI.listProfiles();
+    const current = currentProfiles.find((item) => item.id === profile.id);
+    const hasLocalSecrets = Boolean(
+      current && [
+        current.proxy.username,
+        current.proxy.password,
+        current.proxy.changeIpUrl,
+        current.proxy.freeProxyId,
+      ].some(Boolean)
+    );
+    if (current && hasLocalSecrets) {
+      await saveProfileSecretsToCloud(user, current, effectivePassphrase);
+    } else {
+      const secrets = await restoreProfileSecretsFromCloud(user, profile.id, effectivePassphrase);
+      if (secrets && current) {
+        await window.browserAPI.updateProfile(profile.id, {
+          proxy: { ...current.proxy, ...secrets },
+        });
       } else {
-        const secrets = await restoreProfileSecretsFromCloud(user, profile.id, passphrase);
-        if (secrets && current) {
-          await window.browserAPI.updateProfile(profile.id, {
-            proxy: { ...current.proxy, ...secrets },
-          });
-        } else {
-          await saveProfileSecretsToCloud(user, current || profile, passphrase);
-        }
+        await saveProfileSecretsToCloud(user, current || profile, effectivePassphrase);
       }
+    }
 
-      await restoreLegacyCookiesIfLocalSessionIsEmpty(user, profile.id);
+  await restoreLegacyCookiesIfLocalSessionIsEmpty(user, profile.id);
+  if (
+    typeof idToken === 'string' &&
+    typeof apiKey === 'string' &&
+    typeof effectivePassphrase === 'string' &&
+    typeof bucket === 'string' &&
+    bucket.length > 0
+  ) {
+    try {
       await window.browserAPI.syncCloudProfileArchive(profile.id, {
         idToken,
         apiKey,
-        passphrase,
+        passphrase: effectivePassphrase,
         bucket,
       });
-      await deleteDoc(doc(db, 'users', user.uid, 'profile_cookies', profile.id));
+    } catch (archiveError) {
+      console.warn('Profile archive sync skipped:', archiveError);
     }
-
-    const refreshedProfiles = await window.browserAPI.listProfiles();
-    accountProfiles = accountProfiles.map((profile) => {
-      const refreshed = refreshedProfiles.find((item) => item.id === profile.id);
-      return refreshed || profile;
-    });
   }
+  await deleteDoc(doc(db, 'users', user.uid, 'profile_cookies', profile.id)).catch(() => {});
+  }
+
+  const refreshedProfiles = await window.browserAPI.listProfiles();
+  accountProfiles = accountProfiles.map((profile) => {
+    const refreshed = refreshedProfiles.find((item) => item.id === profile.id);
+    return refreshed || profile;
+  });
 
   return accountProfiles;
 }
