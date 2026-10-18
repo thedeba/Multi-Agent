@@ -47,8 +47,6 @@ import {
   POPULAR_TIMEZONES,
   ALL_TIMEZONES,
 } from '../../profiles/locales';
-import { getFirebaseServices, isFirebaseConfigured } from '../services/firebase';
-import { restoreProfileCookiesFromCloud } from '../services/cloud-profile-sync';
 
 export interface ParsedProxyInfo {
   host: string;
@@ -485,14 +483,6 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
   const handleLaunch = async (profileId: string) => {
     if (window.browserAPI && (window.browserAPI as any).launchProfile) {
       try {
-        if (isFirebaseConfigured) {
-          try {
-            const { auth } = getFirebaseServices();
-            if (auth.currentUser) {
-              await restoreProfileCookiesFromCloud(auth.currentUser, profileId);
-            }
-          } catch {}
-        }
         const result = await (window.browserAPI as any).launchProfile(profileId);
         if (!result.success) {
           alert('This profile is already running in its own browser window.');

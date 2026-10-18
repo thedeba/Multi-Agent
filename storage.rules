@@ -1,0 +1,18 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /users/{userId}/profiles/{profileId}/profile.archive {
+      allow read, write: if request.auth != null
+        && request.auth.uid == userId
+        && profileId.matches('^[a-zA-Z0-9_-]{1,128}$')
+        && (request.resource == null
+          || (request.resource.size <= 2147483648
+            && request.resource.contentType == 'application/octet-stream'));
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

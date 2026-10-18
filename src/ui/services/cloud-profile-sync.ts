@@ -1,8 +1,8 @@
 import { User } from 'firebase/auth';
 import {
+  deleteDoc,
   doc,
   getDoc,
-  getFirestore,
   setDoc,
   writeBatch,
 } from 'firebase/firestore';
@@ -10,6 +10,115 @@ import { execute } from 'firebase/firestore/pipelines';
 import { Profile } from '../../security/ipc-contracts';
 import { ProfileRecordSchema } from '../../profiles/profile-model';
 import { getFirebaseServices } from './firebase';
+import {
+  decryptProfileSecrets,
+  type EncryptedSecrets,
+  encryptProfileSecrets,
+} from './profile-secret-crypto';
+
+interface EncryptedProfileSecrets extends EncryptedSecrets {
+  profileId: string;
+  updatedAt: number;
+}
+
+async function saveProfileSecretsToCloud(
+  user: User,
+  profile: Profile,
+  passphrase: string,
+): Promise<void> {
+  const { username, password, changeIpUrl, proxyType, freeProxyId } = profile.proxy;
+  const secrets = { username, password, changeIpUrl, proxyType, freeProxyId };
+  const reference = doc(getFirebaseServices().db, 'users', user.uid, 'profile_secrets', profile.id);
+  if (!Object.values(secrets).some((value) => value !== undefined && value !== '')) {
+    await deleteDoc(reference);
+    return;
+  }
+
+  const encrypted = await encryptProfileSecrets(secrets, passphrase);
+  await setDoc(reference, {
+    profileId: profile.id,
+    ...encrypted,
+    updatedAt: Date.now(),
+  } satisfies EncryptedProfileSecrets);
+}
+
+async function restoreProfileSecretsFromCloud(
+  user: User,
+  profileId: string,
+  passphrase: string,
+): Promise<Profile['proxy'] | null> {
+  const { db } = getFirebaseServices();
+  const snapshot = await getDoc(doc(db, 'users', user.uid, 'profile_secrets', profileId));
+  if (!snapshot.exists()) return null;
+
+  const data = snapshot.data() as Partial<EncryptedProfileSecrets>;
+  if (
+    data.profileId !== profileId ||
+    data.version !== 1 ||
+    typeof data.salt !== 'string' ||
+    typeof data.iv !== 'string' ||
+    typeof data.ciphertext !== 'string'
+  ) {
+    throw new Error(`Encrypted proxy credentials are invalid for profile ${profileId}.`);
+  }
+
+  const secrets = await decryptProfileSecrets({
+    version: data.version,
+    salt: data.salt,
+    iv: data.iv,
+    ciphertext: data.ciphertext,
+  }, passphrase);
+  if (typeof secrets !== 'object' || secrets === null || Array.isArray(secrets)) {
+    throw new Error('Encrypted proxy credentials have an invalid payload.');
+  }
+  const values = secrets as Record<string, unknown>;
+  if (
+    (values.username !== undefined && typeof values.username !== 'string') ||
+    (values.password !== undefined && typeof values.password !== 'string') ||
+    (values.changeIpUrl !== undefined && typeof values.changeIpUrl !== 'string') ||
+    (values.proxyType !== undefined && !['manual', 'free', 'direct'].includes(String(values.proxyType))) ||
+    (values.freeProxyId !== undefined && typeof values.freeProxyId !== 'string')
+  ) {
+    throw new Error('Encrypted proxy credentials have an invalid payload.');
+  }
+
+  return {
+    enabled: false,
+    mode: 'direct',
+    host: '',
+    port: 8080,
+    username: typeof values.username === 'string' ? values.username : undefined,
+    password: typeof values.password === 'string' ? values.password : undefined,
+    changeIpUrl: typeof values.changeIpUrl === 'string' ? values.changeIpUrl : undefined,
+    proxyType: values.proxyType as Profile['proxy']['proxyType'],
+    freeProxyId: typeof values.freeProxyId === 'string' ? values.freeProxyId : undefined,
+  };
+}
+
+async function restoreLegacyCookiesIfLocalSessionIsEmpty(user: User, profileId: string): Promise<void> {
+  const localSession = await window.browserAPI.getSavedSession(profileId);
+  if (Array.isArray(localSession?.cookies) && localSession.cookies.length > 0) return;
+
+  const snapshot = await getDoc(doc(getFirebaseServices().db, 'users', user.uid, 'profile_cookies', profileId));
+  if (!snapshot.exists()) return;
+  const data = snapshot.data();
+  if (typeof data.cookiesJson !== 'string' || data.cookiesJson.length > 1_048_576) {
+    throw new Error(`Legacy session backup is invalid for profile ${profileId}.`);
+  }
+  let cookies: unknown;
+  try {
+    cookies = JSON.parse(data.cookiesJson);
+  } catch {
+    throw new Error(`Legacy session backup is invalid for profile ${profileId}.`);
+  }
+  if (!Array.isArray(cookies)) {
+    throw new Error(`Legacy session backup is invalid for profile ${profileId}.`);
+  }
+  const openUrls = Array.isArray(data.openUrls)
+    ? data.openUrls.filter((url): url is string => typeof url === 'string').slice(0, 50)
+    : [];
+  await window.browserAPI.saveSavedSession(profileId, { cookies, openUrls });
+}
 
 export function serializeCloudProfile(profile: Profile) {
   const { proxy } = profile;
@@ -49,7 +158,7 @@ function parseCloudProfile(id: string, data: Record<string, unknown>): Profile {
   return parsed;
 }
 
-export async function syncProfilesFromCloud(user: User): Promise<Profile[]> {
+export async function syncProfilesFromCloud(user: User, passphrase?: string): Promise<Profile[]> {
   const { db } = getFirebaseServices();
 
   const snapshot = await execute(db.pipeline().collection(`users/${user.uid}/profiles`));
@@ -84,7 +193,6 @@ export async function syncProfilesFromCloud(user: User): Promise<Profile[]> {
     cleanupBatch.commit().catch((err) => console.warn('Cleanup batch failed:', err));
   }
 
-  // When profiles are synced, also restore cookies for each profile
   const localProfiles = await window.browserAPI.listProfiles();
   const persistentLocalProfiles = (localProfiles || []).filter((p) => {
     if (p.isTemporary) return false;
@@ -104,7 +212,7 @@ export async function syncProfilesFromCloud(user: User): Promise<Profile[]> {
   if (remoteProfiles.length === 0) {
     if (persistentLocalProfiles.length > 0) {
       for (const p of persistentLocalProfiles) {
-        await saveProfileToCloud(user, p);
+        await saveProfileToCloud(user, p, passphrase);
       }
       accountProfiles = persistentLocalProfiles;
     } else {
@@ -118,21 +226,61 @@ export async function syncProfilesFromCloud(user: User): Promise<Profile[]> {
     accountProfiles = await window.browserAPI.replaceCloudProfiles(mergedProfiles);
   }
 
-  // Bidirectional cookie sync in parallel background so UI is unblocked immediately!
-  Promise.allSettled(
-    accountProfiles.map((p) => syncProfileCookies(user, p.id))
-  ).catch((err) => console.warn('Background cookie sync error:', err));
+  if (passphrase) {
+    const idToken = await user.getIdToken();
+    const apiKey = import.meta.env.VITE_FIREBASE_API_KEY;
+    const bucket = import.meta.env.VITE_FIREBASE_STORAGE_BUCKET;
+
+    for (const profile of accountProfiles) {
+      const currentProfiles = await window.browserAPI.listProfiles();
+      const current = currentProfiles.find((item) => item.id === profile.id);
+      const hasLocalSecrets = Boolean(
+        current && [
+          current.proxy.username,
+          current.proxy.password,
+          current.proxy.changeIpUrl,
+          current.proxy.freeProxyId,
+        ].some(Boolean)
+      );
+      if (current && hasLocalSecrets) {
+        await saveProfileSecretsToCloud(user, current, passphrase);
+      } else {
+        const secrets = await restoreProfileSecretsFromCloud(user, profile.id, passphrase);
+        if (secrets && current) {
+          await window.browserAPI.updateProfile(profile.id, {
+            proxy: { ...current.proxy, ...secrets },
+          });
+        } else {
+          await saveProfileSecretsToCloud(user, current || profile, passphrase);
+        }
+      }
+
+      await restoreLegacyCookiesIfLocalSessionIsEmpty(user, profile.id);
+      await window.browserAPI.syncCloudProfileArchive(profile.id, {
+        idToken,
+        apiKey,
+        passphrase,
+        bucket,
+      });
+      await deleteDoc(doc(db, 'users', user.uid, 'profile_cookies', profile.id));
+    }
+  }
 
   return accountProfiles;
 }
 
-export async function saveProfileToCloud(user: User, profile: Profile): Promise<void> {
+export async function saveProfileToCloud(
+  user: User,
+  profile: Profile,
+  passphrase?: string
+): Promise<void> {
   if (profile.isTemporary) return;
   const { db } = getFirebaseServices();
   await setDoc(
     doc(db, 'users', user.uid, 'profiles', profile.id),
     serializeCloudProfile(profile)
   );
+  if (passphrase) await saveProfileSecretsToCloud(user, profile, passphrase);
 }
 
 export async function deleteProfileFromCloud(user: User, profileId: string): Promise<void> {
@@ -140,96 +288,10 @@ export async function deleteProfileFromCloud(user: User, profileId: string): Pro
   const batch = writeBatch(db);
   batch.delete(doc(db, 'users', user.uid, 'profiles', profileId));
   batch.delete(doc(db, 'users', user.uid, 'profile_cookies', profileId));
+  batch.delete(doc(db, 'users', user.uid, 'profile_secrets', profileId));
   await batch.commit();
 }
 
-export async function saveProfileCookiesToCloud(
-  user: User,
-  profileId: string,
-  cookies: any[],
-  openUrls: string[] = []
-): Promise<void> {
-  const { db } = getFirebaseServices();
-  const cleanCookies = Array.isArray(cookies) ? cookies : [];
-  const cleanUrls = (Array.isArray(openUrls) ? openUrls : [])
-    .slice(0, 50)
-    .map((u) => String(u).slice(0, 2048));
-
-  // Serialize cookies to JSON string, keeping within 1MB bounds
-  let cookiesJson = JSON.stringify(cleanCookies);
-  if (cookiesJson.length > 1048576) {
-    // If over 1MB, reduce cookie list
-    const trimmed = cleanCookies.slice(0, Math.floor(cleanCookies.length * 0.8));
-    cookiesJson = JSON.stringify(trimmed);
-  }
-  const safeCookiesJson = cookiesJson.slice(0, 1048576);
-
-  await setDoc(doc(db, 'users', user.uid, 'profile_cookies', profileId), {
-    profileId,
-    updatedAt: Date.now(),
-    count: cleanCookies.length,
-    cookiesJson: safeCookiesJson,
-    openUrls: cleanUrls,
-  });
-}
-
-export async function fetchProfileCookiesFromCloud(
-  user: User,
-  profileId: string
-): Promise<{ cookies: any[]; openUrls: string[]; updatedAt?: number } | null> {
-  const { db } = getFirebaseServices();
-  const docRef = doc(db, 'users', user.uid, 'profile_cookies', profileId);
-  const snapshot = await getDoc(docRef);
-  if (!snapshot.exists()) {
-    return null;
-  }
-  const data = snapshot.data();
-  try {
-    const cookies = JSON.parse(data.cookiesJson || '[]');
-    const openUrls = Array.isArray(data.openUrls) ? data.openUrls : [];
-    return { cookies, openUrls, updatedAt: Number(data.updatedAt) || undefined };
-  } catch {
-    return null;
-  }
-}
-
-export async function syncProfileCookies(
-  user: User,
-  profileId: string
-): Promise<void> {
-  if (!window.browserAPI) return;
-
-  const cloudData = await fetchProfileCookiesFromCloud(user, profileId);
-  const localSession = await window.browserAPI.getSavedSession(profileId);
-
-  const hasCloudCookies = Boolean(cloudData && Array.isArray(cloudData.cookies) && cloudData.cookies.length > 0);
-  const hasLocalCookies = Boolean(localSession && Array.isArray(localSession.cookies) && localSession.cookies.length > 0);
-
-  if (hasCloudCookies && !hasLocalCookies) {
-    // Cloud has cookies, local is empty (e.g. logging into a second computer): restore locally
-    await window.browserAPI.saveSavedSession(profileId, cloudData!);
-    await window.browserAPI.importCookies(profileId, JSON.stringify(cloudData!.cookies));
-  } else if (!hasCloudCookies && hasLocalCookies) {
-    // Local has cookies from prior sessions, cloud is empty: push to Firebase!
-    await saveProfileCookiesToCloud(user, profileId, localSession.cookies, localSession.openUrls || []);
-  } else if (hasCloudCookies && hasLocalCookies) {
-    // Both have cookies: keep local in sync with cloud
-    await window.browserAPI.saveSavedSession(profileId, cloudData!);
-    await window.browserAPI.importCookies(profileId, JSON.stringify(cloudData!.cookies));
-  }
-}
-
-export async function restoreProfileCookiesFromCloud(
-  user: User,
-  profileId: string
-): Promise<boolean> {
-  const cloudData = await fetchProfileCookiesFromCloud(user, profileId);
-  if (cloudData && window.browserAPI) {
-    await window.browserAPI.saveSavedSession(profileId, cloudData);
-    if (cloudData.cookies.length > 0) {
-      await window.browserAPI.importCookies(profileId, JSON.stringify(cloudData.cookies));
-    }
-    return true;
-  }
-  return false;
+export async function deleteLegacyCloudCookies(user: User, profileId: string): Promise<void> {
+  await deleteDoc(doc(getFirebaseServices().db, 'users', user.uid, 'profile_cookies', profileId));
 }

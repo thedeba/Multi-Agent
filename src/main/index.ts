@@ -6,6 +6,7 @@ import { getPlatformInfo } from '../platform/platform-info';
 import { ProfileManager } from '../profiles/profile-manager';
 import { ProfileLock } from '../profiles/profile-lock';
 import { verifyFirebaseIdToken } from '../security/firebase-auth-verifier';
+import { restoreProfileArchive, uploadProfileArchive } from '../profiles/profile-cloud-archive';
 
 // Set secure Chromium command-line switches
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling');
@@ -208,6 +209,70 @@ function registerIpcHandlers() {
       session?.openUrls || []
     );
     return true;
+  });
+
+  const getArchiveCredentials = async (event: Electron.IpcMainInvokeEvent, profileId: string, credentials: unknown) => {
+    if (event.sender !== mainWindow?.webContents) {
+      throw new Error('Only the application window can sync profile archives.');
+    }
+    const userId = requireAuthenticatedUser();
+    if (
+      typeof credentials !== 'object' ||
+      credentials === null ||
+      !('idToken' in credentials) ||
+      typeof credentials.idToken !== 'string' ||
+      !('apiKey' in credentials) ||
+      typeof credentials.apiKey !== 'string' ||
+      !('passphrase' in credentials) ||
+      typeof credentials.passphrase !== 'string' ||
+      !('bucket' in credentials) ||
+      typeof credentials.bucket !== 'string'
+    ) {
+      throw new Error('Invalid cloud archive credentials.');
+    }
+    const verifiedUserId = await verifyFirebaseIdToken(credentials);
+    if (verifiedUserId !== userId) {
+      throw new Error('The signed-in account changed. Sign in again before syncing profile data.');
+    }
+    const profile = profileManager.getProfile(profileId);
+    if (!profile || profile.isTemporary) {
+      throw new Error('Only saved profiles can be synced to the cloud.');
+    }
+    return {
+      userId,
+      credentials: {
+        idToken: credentials.idToken,
+        passphrase: credentials.passphrase,
+        bucket: credentials.bucket,
+      },
+    };
+  };
+
+  ipcMain.handle(IPC_CHANNELS.PROFILE_ARCHIVE_SYNC, async (event, { profileId, credentials }) => {
+    const archiveCredentials = await getArchiveCredentials(event, profileId, credentials);
+    const result = await restoreProfileArchive(
+      archiveCredentials.userId,
+      profileId,
+      archiveCredentials.credentials
+    );
+    if (result !== 'restored') {
+      await uploadProfileArchive(
+        archiveCredentials.userId,
+        profileId,
+        archiveCredentials.credentials
+      );
+      return 'uploaded';
+    }
+    return result === 'restored' ? 'restored' : 'already-local';
+  });
+
+  ipcMain.handle(IPC_CHANNELS.PROFILE_ARCHIVE_UPLOAD, async (event, { profileId, credentials }) => {
+    const archiveCredentials = await getArchiveCredentials(event, profileId, credentials);
+    await uploadProfileArchive(
+      archiveCredentials.userId,
+      profileId,
+      archiveCredentials.credentials
+    );
   });
 
   ipcMain.handle(IPC_CHANNELS.STORAGE_CLEAR, async (_event, { profileId, categories }) => {

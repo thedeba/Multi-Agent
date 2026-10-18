@@ -8,5 +8,8 @@
     "edition": "enterprise",
     "database": "privacy-browser",
     "location": "asia-southeast1"
+  },
+  "storage": {
+    "rules": "storage.rules"
   }
 }

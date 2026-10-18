@@ -35,11 +35,27 @@ fingerprinting পদ্ধতি আটকানোর নিশ্চয়তা
 বাস্তব সুরক্ষা নির্ভর করে। সংবেদনশীল কাজের ক্ষেত্রে নিজের ঝুঁকি ও প্রয়োজন
 বুঝে ব্যবহার করুন।
 
-Cloud sync profile settings-এর জন্য। Browsing history, cookies, saved password,
-browser profile folder এবং proxy username/password cloud-এ upload করা হয় না।
-অন্য device-এ proxy ব্যবহার করতে হলে credential আবার দিতে হতে পারে। App-এ
-নিজে থেকে account তৈরি করা যায় না; login account administrator আগে থেকেই
-তৈরি করে দেবেন।
+Cloud sync-এ profile settings Firestore-এ এবং browser profile-এর encrypted
+snapshot Firebase Storage-এ রাখা যায়। Browser বন্ধ হওয়ার পরে snapshot তৈরি
+হয়; অন্য computer-এ একই account-এ sign in করে একই sync passphrase লিখে **Sync
+now** চাপলে নতুন profile-এর session restore হয়। Site-এর security policy,
+device বা network বদলের কারণে কোনো website আবার sign-in চাইতে পারে।
+
+Snapshot এবং proxy username/password client-side AES-GCM দিয়ে encrypt হয়।
+Sync passphrase app-এ বা Firebase-এ সংরক্ষণ করা হয় না; সব computer-এ একই
+passphrase ব্যবহার করুন এবং নিরাপদ জায়গায় লিখে রাখুন। Passphrase হারালে
+encrypted cloud data উদ্ধার করা যাবে না। Sync করা browser data-তে cookies,
+site storage, session state, browsing history ও profile-এর অন্যান্য local
+files থাকতে পারে। Chromium-এর OS-bound saved-password vault, cookie database
+এবং OS encryption key snapshot থেকে বাদ থাকে; saved password অন্য computer-এ
+স্থানান্তরিত হবে না। Cache ও অন্যান্য website data snapshot-এ থাকতে পারে।
+
+এই সুবিধার জন্য Firebase project-এ **Cloud Storage** চালু করে bucket তৈরি
+করতে হবে; `.env.local`-এ `VITE_FIREBASE_STORAGE_BUCKET`-এ bucket-এর নাম দিয়ে
+app rebuild করুন এবং Firebase Security Rules deploy করুন। Profile snapshot
+সর্বোচ্চ 2 GB; Cloud Storage usage ও transfer-এর জন্য Firebase/Google Cloud
+charge হতে পারে। App-এ নিজে থেকে account তৈরি করা যায় না; login account
+administrator আগে থেকেই তৈরি করে দেবেন।
 
 ## Release ডাউনলোড ও ইনস্টল
 

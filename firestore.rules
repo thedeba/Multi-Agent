@@ -310,6 +310,51 @@ service cloud.firestore {
       allow delete: if isOwner(userId);
     }
 
+    match /users/{userId}/profile_secrets/{profileId} {
+      function isValidProfileSecrets() {
+        let data = request.resource.data;
+        return data.keys().hasOnly([
+            'profileId',
+            'version',
+            'salt',
+            'iv',
+            'ciphertext',
+            'updatedAt'
+          ])
+          && data.keys().hasAll([
+            'profileId',
+            'version',
+            'salt',
+            'iv',
+            'ciphertext',
+            'updatedAt'
+          ])
+          && data.profileId is string
+          && data.profileId == profileId
+          && profileId.matches('^[a-zA-Z0-9_-]{1,128}$')
+          && data.version is int
+          && data.version == 1
+          && data.salt is string
+          && data.salt.matches('^[A-Za-z0-9+/]{22}==$')
+          && data.iv is string
+          && data.iv.matches('^[A-Za-z0-9+/]{16}$')
+          && data.ciphertext is string
+          && data.ciphertext.size() >= 24
+          && data.ciphertext.size() <= 8192
+          && data.updatedAt is int
+          && data.updatedAt >= 0
+          && data.updatedAt <= 4102444800000;
+      }
+
+      allow get, list: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidProfileSecrets();
+      allow update: if isOwner(userId)
+        && isValidProfileSecrets()
+        && request.resource.data.profileId == resource.data.profileId
+        && request.resource.data.updatedAt >= resource.data.updatedAt;
+      allow delete: if isOwner(userId);
+    }
+
     // Default deny for all other paths.
     match /{document=**} {
       allow read, write: if false;

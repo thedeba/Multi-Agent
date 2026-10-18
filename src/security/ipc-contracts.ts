@@ -16,11 +16,11 @@ export const ProxyConfigSchema = z.object({
   mode: z.enum(['direct', 'http', 'https', 'socks5']),
   host: z.string().default(''),
   port: z.number().int().min(1).max(65535).default(8080),
-  username: z.string().optional(),
-  password: z.string().optional(),
-  changeIpUrl: z.string().optional(),
+  username: z.string().max(1024).optional(),
+  password: z.string().max(1024).optional(),
+  changeIpUrl: z.string().max(2048).optional(),
   proxyType: z.enum(['manual', 'free', 'direct']).optional(),
-  freeProxyId: z.string().optional(),
+  freeProxyId: z.string().max(256).optional(),
 });
 export type ProxyConfig = z.infer<typeof ProxyConfigSchema>;
 
@@ -138,6 +138,8 @@ export const IPC_CHANNELS = {
   PROFILE_SESSION_UPDATED: 'profile:session-updated',
   PROFILE_GET_SAVED_SESSION: 'profile:get-saved-session',
   PROFILE_SET_SAVED_SESSION: 'profile:set-saved-session',
+  PROFILE_ARCHIVE_SYNC: 'profile:archive-sync',
+  PROFILE_ARCHIVE_UPLOAD: 'profile:archive-upload',
   STORAGE_CLEAR: 'storage:clear',
   CLIPBOARD_WRITE: 'clipboard:write',
   CLIPBOARD_READ: 'clipboard:read',

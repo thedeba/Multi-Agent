@@ -432,7 +432,7 @@ export class BrowserInstanceManager {
           if (profile.isTemporary) {
             ProfileStorage.deleteProfileDirectory(profileId);
           } else {
-            // Capture and broadcast latest cookies and open tabs for cloud sync
+            // Capture the latest cookies and open tabs while the browser is shutting down.
             try {
               const finalSession = syncServer.getSession(profileId);
               syncServer.saveSessionToDisk(profileId, finalSession.cookies, finalSession.openUrls);
@@ -483,6 +483,35 @@ export class BrowserInstanceManager {
       const syncServer = SessionSyncServer.getInstance();
       const finalSession = syncServer.getSession(profileId);
       syncServer.saveSessionToDisk(profileId, finalSession.cookies, finalSession.openUrls);
+    } catch {
+      // Non-blocking session capture
+    }
+
+    const timeout = Date.now() + 5000;
+    while (ProfileLock.isLocked(profileId) && Date.now() < timeout) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+
+    if (ProfileLock.isLocked(profileId)) {
+      if (ownerPid) {
+        try {
+          process.kill(ownerPid, 'SIGKILL');
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+        }
+      }
+      const forceTimeout = Date.now() + 2000;
+      while (ProfileLock.isLocked(profileId) && Date.now() < forceTimeout) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      if (ProfileLock.isLocked(profileId)) {
+        throw new Error(`Profile ${profileId} is still running; its cloud snapshot was not taken.`);
+      }
+    }
+
+    this.profileManager?.updateProfileStatus(profileId, 'stopped');
+    try {
+      const finalSession = SessionSyncServer.getInstance().getSession(profileId);
       if (this.mainWindow && !this.mainWindow.isDestroyed()) {
         this.mainWindow.webContents.send(IPC_CHANNELS.PROFILE_SESSION_EXITED, {
           profileId,
@@ -490,24 +519,9 @@ export class BrowserInstanceManager {
           openUrls: finalSession.openUrls,
         });
       }
-    } catch {
-      // Non-blocking session capture
+    } catch (error) {
+      console.error(`Failed to publish stopped profile state for ${profileId}:`, error);
     }
-
-    const timeout = Date.now() + 1500;
-    while (ProfileLock.isLocked(profileId) && Date.now() < timeout) {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-
-    // Force release lock if still stuck
-    if (ProfileLock.isLocked(profileId)) {
-      ProfileLock.release(profileId, ownerPid || process.pid);
-      if (ProfileLock.isLocked(profileId)) {
-        ProfileLock.release(profileId);
-      }
-    }
-
-    this.profileManager?.updateProfileStatus(profileId, 'stopped');
     this.broadcastRunningProfiles();
     return true;
   }

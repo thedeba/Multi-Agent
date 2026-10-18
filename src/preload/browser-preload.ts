@@ -43,6 +43,8 @@ const IPC_CHANNELS = {
   PROFILE_SESSION_UPDATED: 'profile:session-updated',
   PROFILE_GET_SAVED_SESSION: 'profile:get-saved-session',
   PROFILE_SET_SAVED_SESSION: 'profile:set-saved-session',
+  PROFILE_ARCHIVE_SYNC: 'profile:archive-sync',
+  PROFILE_ARCHIVE_UPLOAD: 'profile:archive-upload',
   STORAGE_CLEAR: 'storage:clear',
   CLIPBOARD_WRITE: 'clipboard:write',
   CLIPBOARD_READ: 'clipboard:read',
@@ -174,6 +176,16 @@ const browserAPI = {
     ipcRenderer.invoke(IPC_CHANNELS.PROFILE_GET_SAVED_SESSION, { profileId }),
   saveSavedSession: (profileId: string, session: { cookies: any[]; openUrls: string[] }): Promise<boolean> =>
     ipcRenderer.invoke(IPC_CHANNELS.PROFILE_SET_SAVED_SESSION, { profileId, session }),
+  syncCloudProfileArchive: (
+    profileId: string,
+    credentials: { idToken: string; apiKey: string; passphrase: string; bucket: string }
+  ): Promise<'restored' | 'uploaded' | 'already-local'> =>
+    ipcRenderer.invoke(IPC_CHANNELS.PROFILE_ARCHIVE_SYNC, { profileId, credentials }),
+  uploadCloudProfileArchive: (
+    profileId: string,
+    credentials: { idToken: string; apiKey: string; passphrase: string; bucket: string }
+  ): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.PROFILE_ARCHIVE_UPLOAD, { profileId, credentials }),
 
   // Auto Updater
   checkForUpdates: (): Promise<{ success: boolean; updateInfo?: any; error?: string }> =>
