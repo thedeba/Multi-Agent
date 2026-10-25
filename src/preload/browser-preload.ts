@@ -188,7 +188,7 @@ const browserAPI = {
     ipcRenderer.invoke(IPC_CHANNELS.PROFILE_ARCHIVE_UPLOAD, { profileId, credentials }),
 
   // Auto Updater
-  checkForUpdates: (): Promise<{ success: boolean; updateInfo?: any; error?: string }> =>
+  checkForUpdates: (): Promise<{ success: boolean; updateAvailable?: boolean; updateInfo?: any; error?: string }> =>
     ipcRenderer.invoke(IPC_CHANNELS.UPDATER_CHECK),
   downloadUpdate: (): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke(IPC_CHANNELS.UPDATER_DOWNLOAD),

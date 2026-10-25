@@ -120,21 +120,21 @@ to reduce Windows security warnings.
 
 ## Release
 ```sh
-git tag v2.1.2
-git push origin v2.1.2
+git tag v2.1.4
+git push origin v2.1.4
 
-gh release create v2.1.2 \
-  "release/Multi-Agent-Setup-2.1.2.exe" \
-  "release/Multi-Agent-2.1.2-win.zip" \
-  "release/Multi-Agent-2.1.2-arm64-win.zip" \
-  "release/Multi-Agent-2.1.2-arm64.dmg" \
-  "release/Multi-Agent-2.1.2.dmg" \
-  "release/Multi-Agent-2.1.2-arm64-mac.zip" \
-  "release/Multi-Agent-2.1.2-mac.zip" \
+gh release create v2.1.4 \
+  "release/Multi-Agent-Setup-2.1.4.exe" \
+  "release/Multi-Agent-2.1.4-win.zip" \
+  "release/Multi-Agent-2.1.4-arm64-win.zip" \
+  "release/Multi-Agent-2.1.4-arm64.dmg" \
+  "release/Multi-Agent-2.1.4.dmg" \
+  "release/Multi-Agent-2.1.4-arm64-mac.zip" \
+  "release/Multi-Agent-2.1.4-mac.zip" \
   "release/latest.yml" \
   "release/latest-mac.yml" \
-  --title "Multi Agent v2.1.2" \
-  --notes "## Multi Agent v2.1.2
+  --title "Multi Agent v2.1.4" \
+  --notes "## Multi Agent v2.1.4
 
 A new major release of Multi Agent, a privacy-focused desktop browser for macOS and Windows.
 
@@ -145,13 +145,13 @@ A new major release of Multi Agent, a privacy-focused desktop browser for macOS 
 - Improved release and distribution workflow.
 
 ### Downloads
-- **Windows (NSIS Installer):** Multi-Agent-Setup-2.1.2.exe
-- **Windows (x64 Portable ZIP):** Multi-Agent-2.1.2-win.zip
-- **Windows (ARM64 Portable ZIP):** Multi-Agent-2.1.2-arm64-win.zip
-- **macOS (Apple Silicon Installer):** Multi-Agent-2.1.2-arm64.dmg
-- **macOS (Intel Installer):** Multi-Agent-2.1.2.dmg
-- **macOS (Apple Silicon Auto-Update):** Multi-Agent-2.1.2-arm64-mac.zip
-- **macOS (Intel Auto-Update):** Multi-Agent-2.1.2-mac.zip
+- **Windows (NSIS Installer):** Multi-Agent-Setup-2.1.4.exe
+- **Windows (x64 Portable ZIP):** Multi-Agent-2.1.4-win.zip
+- **Windows (ARM64 Portable ZIP):** Multi-Agent-2.1.4-arm64-win.zip
+- **macOS (Apple Silicon Installer):** Multi-Agent-2.1.4-arm64.dmg
+- **macOS (Intel Installer):** Multi-Agent-2.1.4.dmg
+- **macOS (Apple Silicon Auto-Update):** Multi-Agent-2.1.4-arm64-mac.zip
+- **macOS (Intel Auto-Update):** Multi-Agent-2.1.4-mac.zip
 
 ### Installation
 Download the appropriate installer for your operating system and follow the installation instructions.

@@ -1418,6 +1418,8 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
       const res = await (window.browserAPI as any).checkForUpdates();
       if (!res.success && res.error) {
         setUpdateStatus({ status: 'error', message: res.error });
+      } else if (res.updateAvailable === false) {
+        setUpdateStatus({ status: 'not-available' });
       }
     } catch (e: any) {
       setUpdateStatus({ status: 'error', message: e.message });
@@ -6414,7 +6416,7 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
                     Software Updates
                   </h3>
                   <p style={{ margin: '2px 0 0', fontSize: 11.5, color: '#8b92a2' }}>
-                    Multi Agent Browser • Current v2.1.0
+                    Multi Agent Browser • Current v{__APP_VERSION__}
                   </p>
                 </div>
               </div>
@@ -6631,7 +6633,7 @@ export const ProfileSwitcher: React.FC<ProfileSwitcherProps> = ({
                       You are up to date!
                     </h4>
                     <p style={{ margin: '3px 0 0', fontSize: 12, color: '#8b92a2', lineHeight: 1.4 }}>
-                      Multi Agent v2.1.0 is the latest available version.
+                      Multi Agent v{__APP_VERSION__} is the latest available version.
                     </p>
                   </div>
                 </div>

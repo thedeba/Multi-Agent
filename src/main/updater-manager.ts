@@ -108,15 +108,32 @@ export class AppUpdaterManager {
   public registerIpcHandlers(): void {
     ipcMain.handle(IPC_CHANNELS.UPDATER_CHECK, async () => {
       if (!app.isPackaged) {
+        // Development builds always run the latest local source, so there is no update to fetch.
+        this.updateStatus({ status: 'not-available' });
         return {
-          success: false,
-          error: 'Auto-update check is only available in packaged production builds.',
+          success: true,
+          updateAvailable: false,
         };
       }
       try {
         const result = await autoUpdater.checkForUpdates();
+        const updateAvailable = Boolean(result?.isUpdateAvailable);
+
+        if (!updateAvailable) {
+          this.updateStatus({ status: 'not-available' });
+        } else if (result?.updateInfo) {
+          this.updateStatus({
+            status: 'available',
+            version: result.updateInfo.version,
+            releaseNotes: typeof result.updateInfo.releaseNotes === 'string'
+              ? result.updateInfo.releaseNotes
+              : undefined,
+          });
+        }
+
         return {
           success: true,
+          updateAvailable,
           updateInfo: result?.updateInfo,
         };
       } catch (err: any) {

@@ -1,6 +1,6 @@
 {
   "name": "Multi-Agent",
-  "version": "2.1.2",
+  "version": "2.1.4",
   "description": "Production-quality, privacy-focused desktop web browser for macOS and Windows",
   "main": "dist/main/index.js",
   "scripts": {

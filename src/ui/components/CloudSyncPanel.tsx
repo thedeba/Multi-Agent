@@ -25,9 +25,9 @@ import {
 import { getFirebaseServices, isFirebaseConfigured } from '../services/firebase';
 import { getSignInErrorMessage } from '../services/auth-error-message';
 import {
-  deleteLegacyCloudCookies,
   deleteProfileFromCloud,
   saveProfileToCloud,
+  saveProfileSessionToCloud,
   syncProfilesFromCloud,
 } from '../services/cloud-profile-sync';
 import appLogo from '../icon.svg';
@@ -121,7 +121,6 @@ export const CloudSyncPanel: React.FC<CloudSyncPanelProps> = ({
   const [user, setUser] = useState<User | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [syncPassphrase, setSyncPassphrase] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
@@ -259,7 +258,7 @@ export const CloudSyncPanel: React.FC<CloudSyncPanelProps> = ({
 
           performSync()
             .then(async () => {
-              setStatus('Profile list synced. Set a sync passphrase to sync browser data.');
+              setStatus('Profiles and browser data synced automatically.');
               await onProfilesUpdated();
               onAuthStateChanged('ready');
             })
@@ -321,19 +320,27 @@ export const CloudSyncPanel: React.FC<CloudSyncPanelProps> = ({
         const currentProfiles = await window.browserAPI.listProfiles();
         const profile = currentProfiles.find((item) => item.id === change.profileId);
         if (!profile) return;
-        await saveProfileToCloud(user, profile, syncPassphrase || undefined);
+        await saveProfileToCloud(user, profile);
 
-        if (syncPassphrase && appSettings.syncProfileDataToCloud) {
+        // Also ensure any existing local session is uploaded to cloud
+        try {
+          const session = await window.browserAPI.getSavedSession(profile.id);
+          if (Array.isArray(session?.cookies) && session.cookies.length > 0) {
+            await saveProfileSessionToCloud(user, profile.id, session.cookies, session.openUrls || []);
+          }
+        } catch {}
+
+        const bucket = import.meta.env.VITE_FIREBASE_STORAGE_BUCKET;
+        if (bucket && appSettings.syncProfileDataToCloud) {
           const runningProfiles = await window.browserAPI.getRunningProfiles();
           if (!runningProfiles.includes(profile.id)) {
             const idToken = await user.getIdToken();
             await window.browserAPI.syncCloudProfileArchive(profile.id, {
               idToken,
               apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-              passphrase: syncPassphrase,
-              bucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+              passphrase: user.uid,
+              bucket,
             });
-            await deleteLegacyCloudCookies(user, profile.id);
           }
         }
       })();
@@ -344,34 +351,84 @@ export const CloudSyncPanel: React.FC<CloudSyncPanelProps> = ({
         .finally(() => setBusy(false));
     });
 
-    const unsubSessionExited = window.browserAPI.onProfileSessionExited?.((sessionExit) => {
+    const sessionUpdateTimers = new Map<string, NodeJS.Timeout>();
+
+    // Live session auto-sync while browser is running (debounced)
+    const unsubSessionUpdated = window.browserAPI.onProfileSessionUpdated?.((sessionUpdate) => {
       if (!appSettings.syncProfileDataToCloud) return;
-      if (!syncPassphrase) {
-        setStatus('Profile closed locally. Enter the sync passphrase to encrypt and back it up.');
-        return;
+      const existing = sessionUpdateTimers.get(sessionUpdate.profileId);
+      if (existing) clearTimeout(existing);
+
+      const timer = setTimeout(async () => {
+        sessionUpdateTimers.delete(sessionUpdate.profileId);
+        try {
+          await saveProfileSessionToCloud(
+            user,
+            sessionUpdate.profileId,
+            sessionUpdate.cookies,
+            sessionUpdate.openUrls
+          );
+        } catch (err: any) {
+          console.warn('Live session cloud sync error:', err);
+        }
+      }, 3000);
+
+      sessionUpdateTimers.set(sessionUpdate.profileId, timer);
+    });
+
+    // Final session save when browser window closes
+    const unsubSessionExited = window.browserAPI.onProfileSessionExited?.(async (sessionExit) => {
+      if (!appSettings.syncProfileDataToCloud) return;
+
+      const pending = sessionUpdateTimers.get(sessionExit.profileId);
+      if (pending) {
+        clearTimeout(pending);
+        sessionUpdateTimers.delete(sessionExit.profileId);
       }
+
       setBusy(true);
       setError('');
-      user.getIdToken()
-        .then((idToken) => window.browserAPI.uploadCloudProfileArchive(sessionExit.profileId, {
-          idToken,
-          apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-          passphrase: syncPassphrase,
-          bucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-        }))
-        .then(() => deleteLegacyCloudCookies(user, sessionExit.profileId))
-        .then(() => setStatus('Encrypted browser profile snapshot saved'))
-        .catch((syncError: unknown) => {
-          setError(syncError instanceof Error ? syncError.message : String(syncError));
-        })
-        .finally(() => setBusy(false));
+
+      try {
+        // 1. Save session cookies & open tabs directly to Firebase Firestore
+        await saveProfileSessionToCloud(
+          user,
+          sessionExit.profileId,
+          sessionExit.cookies,
+          sessionExit.openUrls
+        );
+        setStatus('Browser session saved to cloud');
+
+        // 2. If Cloud Storage bucket is configured, also archive full snapshot
+        const bucket = import.meta.env.VITE_FIREBASE_STORAGE_BUCKET;
+        if (bucket) {
+          const idToken = await user.getIdToken();
+          await window.browserAPI.uploadCloudProfileArchive(sessionExit.profileId, {
+            idToken,
+            apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+            passphrase: user.uid,
+            bucket,
+          });
+          setStatus('Encrypted browser profile snapshot saved');
+        }
+      } catch (syncError: unknown) {
+        console.warn('Session cloud save error:', syncError);
+        setError(syncError instanceof Error ? syncError.message : String(syncError));
+      } finally {
+        setBusy(false);
+      }
     });
 
     return () => {
       unsubProfile?.();
+      unsubSessionUpdated?.();
       unsubSessionExited?.();
+      for (const t of sessionUpdateTimers.values()) {
+        clearTimeout(t);
+      }
+      sessionUpdateTimers.clear();
     };
-  }, [user, syncPassphrase, appSettings.syncProfileDataToCloud]);
+  }, [user, appSettings.syncProfileDataToCloud]);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -398,24 +455,15 @@ export const CloudSyncPanel: React.FC<CloudSyncPanelProps> = ({
     setBusy(true);
     setError('');
     try {
-      if (
-        appSettings.syncProfileDataToCloud &&
-        syncPassphrase.length > 0 &&
-        (syncPassphrase.length < 12 || syncPassphrase.length > 1024)
-      ) {
-        throw new Error('The sync passphrase must be between 12 and 1024 characters.');
-      }
       const idToken = await user.getIdToken();
       await window.browserAPI.setAuthenticatedUser({
         idToken,
         apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
       });
-      await syncProfilesFromCloud(user, syncPassphrase || undefined);
+      await syncProfilesFromCloud(user);
       await onProfilesUpdated();
       onAuthStateChanged('ready');
-      setStatus(syncPassphrase
-        ? 'Profiles and encrypted browser data synced'
-        : 'Profile list synced. Enter a sync passphrase to sync browser data.');
+      setStatus('Profiles, sessions, and encrypted browser data synced');
     } catch (syncError) {
       const syncErrorMessage = syncError instanceof Error ? syncError.message : String(syncError);
       setError(syncErrorMessage);
@@ -438,7 +486,6 @@ export const CloudSyncPanel: React.FC<CloudSyncPanelProps> = ({
       const { auth } = getFirebaseServices();
       await window.browserAPI.setAuthenticatedUser(null);
       await signOut(auth);
-      setSyncPassphrase('');
     } catch (authError) {
       setError(authError instanceof Error ? authError.message : String(authError));
       onAuthStateChanged('error');
@@ -1203,7 +1250,7 @@ export const CloudSyncPanel: React.FC<CloudSyncPanelProps> = ({
                             color: '#8b92a2',
                           }}
                         >
-                          <span>Multi Agent Desktop Browser • v2.1.0</span>
+                          <span>Multi Agent Desktop Browser • v{__APP_VERSION__}</span>
                           <span>Chromium Core 131.0.6778.86 • Protected</span>
                         </div>
                       </div>
@@ -1275,34 +1322,6 @@ export const CloudSyncPanel: React.FC<CloudSyncPanelProps> = ({
                               </div>
                             </div>
 
-                            {appSettings.syncProfileDataToCloud && (
-                              <div className="settings-card" style={{ marginTop: 14 }}>
-                                <div className="settings-card-title">
-                                  <LockKeyhole size={14} /> Encrypted profile sync passphrase
-                                </div>
-                                <div className="settings-row" style={{ display: 'block' }}>
-                                  <label className="settings-row-label" htmlFor="profile-sync-passphrase">
-                                    Use the same passphrase on every computer
-                                  </label>
-                                  <input
-                                    id="profile-sync-passphrase"
-                                    type="password"
-                                    autoComplete="new-password"
-                                    minLength={12}
-                                    maxLength={1024}
-                                    value={syncPassphrase}
-                                    onChange={(event) => setSyncPassphrase(event.target.value)}
-                                    placeholder="At least 12 characters"
-                                    style={{ width: '100%', marginTop: 8 }}
-                                  />
-                                  <span className="settings-row-desc">
-                                    Never saved by the app. It encrypts proxy credentials and browser snapshots before upload.
-                                    If you forget it, encrypted cloud data cannot be recovered.
-                                  </span>
-                                </div>
-                              </div>
-                            )}
-
                             {/* Cloud Sync Preferences */}
                             <div className="settings-card" style={{ marginTop: 14 }}>
                               <div className="settings-card-title">
@@ -1325,7 +1344,7 @@ export const CloudSyncPanel: React.FC<CloudSyncPanelProps> = ({
                               <div className="settings-row">
                                 <div className="settings-row-info">
                                   <span className="settings-row-label">Encrypted browser profile snapshots</span>
-                                  <span className="settings-row-desc">Back up a closed profile, including site storage and session state; OS-bound saved passwords are excluded</span>
+                                  <span className="settings-row-desc">Automatically restore a closed profile, including site storage and session state, on every computer you sign in to; OS-bound saved passwords are excluded</span>
                                 </div>
                                 <label className="settings-switch">
                                   <input

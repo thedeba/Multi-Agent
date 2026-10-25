@@ -4,6 +4,8 @@ declare global {
   interface Window {
     browserAPI: BrowserAPI;
   }
+
+  const __APP_VERSION__: string;
 }
 
 declare module '*.svg' {

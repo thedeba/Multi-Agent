@@ -37,14 +37,13 @@ fingerprinting পদ্ধতি আটকানোর নিশ্চয়তা
 
 Cloud sync-এ profile settings Firestore-এ এবং browser profile-এর encrypted
 snapshot Firebase Storage-এ রাখা যায়। Browser বন্ধ হওয়ার পরে snapshot তৈরি
-হয়; অন্য computer-এ একই account-এ sign in করে একই sync passphrase লিখে **Sync
-now** চাপলে নতুন profile-এর session restore হয়। Site-এর security policy,
-device বা network বদলের কারণে কোনো website আবার sign-in চাইতে পারে।
+হয়; অন্য computer-এ একই account-এ sign in করলেই profile, session ও browser
+data স্বয়ংক্রিয়ভাবে restore হয়। Site-এর security policy, device বা network
+বদলের কারণে কোনো website আবার sign-in চাইতে পারে।
 
 Snapshot এবং proxy username/password client-side AES-GCM দিয়ে encrypt হয়।
-Sync passphrase app-এ বা Firebase-এ সংরক্ষণ করা হয় না; সব computer-এ একই
-passphrase ব্যবহার করুন এবং নিরাপদ জায়গায় লিখে রাখুন। Passphrase হারালে
-encrypted cloud data উদ্ধার করা যাবে না। Sync করা browser data-তে cookies,
+Encryption key আপনার signed-in account থেকে তৈরি হয়, তাই আলাদা passphrase
+মনে রাখার প্রয়োজন নেই। Sync করা browser data-তে cookies,
 site storage, session state, browsing history ও profile-এর অন্যান্য local
 files থাকতে পারে। Chromium-এর OS-bound saved-password vault, cookie database
 এবং OS encryption key snapshot থেকে বাদ থাকে; saved password অন্য computer-এ
