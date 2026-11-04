@@ -269,6 +269,40 @@ function parseCloudProfile(id: string, data: Record<string, unknown>): Profile {
   return parsed;
 }
 
+/** Apply a live Firestore collection snapshot without uploading local-only profiles. */
+export async function applyCloudProfileSnapshot(
+  documents: Array<{ id: string; data: Record<string, unknown> }>
+): Promise<Profile[]> {
+  const remoteProfiles = documents
+    .map(({ id, data }) => parseCloudProfile(id, data))
+    .filter((profile) => {
+      const lowerName = (profile.name || '').trim().toLowerCase();
+      return !(
+        profile.isTemporary ||
+        demoProfileIds.includes(profile.id) ||
+        lowerName === 'keep me' ||
+        lowerName === 'temporary session' ||
+        lowerName === 'running temporary' ||
+        lowerName.startsWith('demo')
+      );
+    });
+
+  const localProfiles = await window.browserAPI.listProfiles();
+  const remoteIds = new Set(remoteProfiles.map((profile) => profile.id));
+  const localOnlyProfiles = (localProfiles || []).filter((profile) => {
+    if (profile.isTemporary || remoteIds.has(profile.id) || demoProfileIds.includes(profile.id)) return false;
+    const lowerName = (profile.name || '').trim().toLowerCase();
+    return !(
+      lowerName === 'keep me' ||
+      lowerName === 'temporary session' ||
+      lowerName === 'running temporary' ||
+      lowerName.startsWith('demo')
+    );
+  });
+
+  return window.browserAPI.replaceCloudProfiles([...remoteProfiles, ...localOnlyProfiles]);
+}
+
 export async function syncProfilesFromCloud(user: User): Promise<Profile[]> {
   const { db } = getFirebaseServices();
 

@@ -1,5 +1,6 @@
 import React, { FormEvent, useEffect, useState, useRef } from 'react';
 import { User, onIdTokenChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { collection, onSnapshot } from 'firebase/firestore';
 import {
   AlertTriangle,
   ArrowRight,
@@ -26,6 +27,7 @@ import { getFirebaseServices, isFirebaseConfigured } from '../services/firebase'
 import { getSignInErrorMessage } from '../services/auth-error-message';
 import {
   deleteProfileFromCloud,
+  applyCloudProfileSnapshot,
   saveProfileToCloud,
   saveProfileSessionToCloud,
   syncProfilesFromCloud,
@@ -305,6 +307,40 @@ export const CloudSyncPanel: React.FC<CloudSyncPanelProps> = ({
       onAuthStateChanged('error');
     }
   }, [onAuthStateChanged, onProfilesUpdated]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const { db } = getFirebaseServices();
+    let pendingApply = Promise.resolve();
+    const unsubscribe = onSnapshot(
+      collection(db, 'users', user.uid, 'profiles'),
+      (snapshot) => {
+        // Keep snapshot applications ordered so a slower earlier update cannot
+        // overwrite a newer profile list.
+        pendingApply = pendingApply
+          .then(async () => {
+            await applyCloudProfileSnapshot(
+              snapshot.docs.map((profileDoc) => ({
+                id: profileDoc.id,
+                data: profileDoc.data(),
+              }))
+            );
+            await onProfilesUpdated();
+          })
+          .catch((syncError: unknown) => {
+            console.warn('Live profile sync failed:', syncError);
+            setStatus('Live profile sync paused');
+          });
+      },
+      (syncError) => {
+        console.warn('Live profile sync listener failed:', syncError);
+        setStatus('Live profile sync unavailable');
+      }
+    );
+
+    return unsubscribe;
+  }, [user, onProfilesUpdated]);
 
   useEffect(() => {
     if (!user) return;
